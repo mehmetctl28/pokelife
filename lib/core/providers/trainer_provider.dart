@@ -10,14 +10,18 @@ class TrainerProvider extends ChangeNotifier {
   String _lastStreakDate = "";
   String _lastStepDate = "";
   
-  // POKÉDEX LİSTESİ
   List<int> _caughtPokemonIds = [];
+  bool _isInitialized = false;
+
+  // YENİ: Donanımın son bildirdiği toplam adım (Uygulama kapalıyken atılanları bulmak için)
+  int _lastSystemStep = 0;
 
   int get xp => _xp;
   int get steps => _steps;
   int get dailySteps => _dailySteps;
   int get streak => _streak;
   List<int> get caughtPokemonIds => _caughtPokemonIds;
+  bool get isInitialized => _isInitialized;
   
   int get level {
     int l = 1;
@@ -70,55 +74,98 @@ class TrainerProvider extends ChangeNotifier {
     _lastStreakDate = prefs.getString('last_streak_date') ?? "";
     _lastStepDate = prefs.getString('last_step_date') ?? "";
     
-    // Diske kaydedilmiş yakalanan Pokémon'ları yükle
+    // YENİ: Diske kaydedilen son donanım adımı verisini yükle
+    _lastSystemStep = prefs.getInt('last_system_step') ?? 0;
+    
     final List<String>? savedList = prefs.getStringList('caught_pokemons');
     if (savedList != null) {
       _caughtPokemonIds = savedList.map((e) => int.parse(e)).toList();
     } else {
-      // Başlangıç hediyesi: Bulbasaur (1)
       _caughtPokemonIds = [1];
     }
     
-    _checkDailyReset(prefs);
-    _checkStreak(prefs);
+    _handleDateChanges(prefs);
+    _isInitialized = true;
     notifyListeners();
   }
 
-  void _checkDailyReset(SharedPreferences prefs) {
-    final today = DateTime.now().toIso8601String().split('T')[0];
-    if (_lastStepDate != today) {
-      _dailySteps = 0;
-      _lastStepDate = today;
-      prefs.setInt('trainer_daily_steps', 0);
-      prefs.setString('last_step_date', today);
-    }
-  }
-
-  void _checkStreak(SharedPreferences prefs) {
-    if (_lastStreakDate.isEmpty) return;
+  // Tarih ve Seri Kontrolü Tek Merkezde
+  void _handleDateChanges(SharedPreferences prefs) {
     final today = DateTime.now();
-    final todayDate = DateTime(today.year, today.month, today.day);
-    final lastDate = DateTime.parse(_lastStreakDate);
-    final lastStreakDay = DateTime(lastDate.year, lastDate.month, lastDate.day);
-    
-    if (todayDate.difference(lastStreakDay).inDays > 1) {
-      _streak = 0;
-      prefs.setInt('trainer_streak', 0);
+    final todayStr = today.toIso8601String().split('T')[0];
+
+    // Gün değiştiyse günlük adımları sıfırla
+    if (_lastStepDate.isNotEmpty && _lastStepDate != todayStr) {
+      _dailySteps = 0;
+      _lastStepDate = todayStr;
+      prefs.setInt('trainer_daily_steps', 0);
+      prefs.setString('last_step_date', todayStr);
+    } else if (_lastStepDate.isEmpty) {
+      _lastStepDate = todayStr;
+      prefs.setString('last_step_date', todayStr);
+    }
+
+    // Seri (Streak) bozulma kontrolü
+    if (_lastStreakDate.isNotEmpty) {
+      final lastDate = DateTime.parse(_lastStreakDate);
+      final diff = DateTime(today.year, today.month, today.day)
+          .difference(DateTime(lastDate.year, lastDate.month, lastDate.day))
+          .inDays;
+      
+      if (diff > 1) {
+        _streak = 0;
+        prefs.setInt('trainer_streak', 0);
+      }
     }
   }
 
-  void addSteps(int newSteps) async {
-    _steps += newSteps;
-    _dailySteps += newSteps;
-    
-    if (_dailySteps % 250 == 0) {
-      _xp += 1;
+  // YENİ: UYGULAMA KAPALIYKEN ATILAN ADIMLARI HESAPLAYAN FONKSİYON
+  void processHardwareStep(int hardwareStep) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (_lastSystemStep == 0) {
+      _lastSystemStep = hardwareStep;
+      await prefs.setInt('last_system_step', _lastSystemStep);
+      return;
     }
 
+    // Eğer telefon yeniden başlatıldıysa donanım sayacı 0'lanır.
+    if (hardwareStep < _lastSystemStep) {
+      _lastSystemStep = hardwareStep;
+      await prefs.setInt('last_system_step', _lastSystemStep);
+      return;
+    }
+
+    // Uygulama kapalıyken (veya açıkken) atılan farkı bul
+    int delta = hardwareStep - _lastSystemStep;
+    if (delta > 0) {
+      _lastSystemStep = hardwareStep;
+      await prefs.setInt('last_system_step', _lastSystemStep);
+      addSteps(delta); // Aradaki farkı normal adım ekleme sistemine yolla
+    }
+  }
+
+  // Atlanan Eşikleri Doğru Hesaplama Modülü
+  void addSteps(int delta) async {
+    if (delta <= 0) return;
+    
     final prefs = await SharedPreferences.getInstance();
+    _handleDateChanges(prefs); 
+
+    int oldDaily = _dailySteps;
+    _steps += delta;
+    _dailySteps += delta;
+    
+    // Modulo (%) yerine tam sayı bölmesi ile kesin eşik tespiti
+    int earnedXp = (_dailySteps ~/ 250) - (oldDaily ~/ 250);
+    
+    if (earnedXp > 0) {
+      _xp += earnedXp;
+      await prefs.setInt('trainer_xp', _xp);
+    }
+
     await prefs.setInt('trainer_steps', _steps);
     await prefs.setInt('trainer_daily_steps', _dailySteps);
-    await prefs.setInt('trainer_xp', _xp);
     notifyListeners();
   }
 
@@ -129,8 +176,8 @@ class TrainerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // POKÉMON YAKALAMA FONKSİYONU
-  void catchPokemon(int pokeId) async {
+  // Tekrar Yakalama İstismarını Engelleme Modülü
+  Future<bool> catchPokemon(int pokeId) async {
     if (!_caughtPokemonIds.contains(pokeId)) {
       _caughtPokemonIds.add(pokeId);
       _caughtPokemonIds.sort(); 
@@ -141,14 +188,20 @@ class TrainerProvider extends ChangeNotifier {
         _caughtPokemonIds.map((e) => e.toString()).toList(),
       );
       notifyListeners();
+      return true; // Yeni keşif
     }
+    return false; // Zaten koleksiyonda var
   }
 
   void claimDailyBonus() async {
     if (isBonusClaimedToday) return;
     
+    final prefs = await SharedPreferences.getInstance();
+    _handleDateChanges(prefs); 
+    
     final today = DateTime.now();
     final todayStr = today.toIso8601String().split('T')[0];
+    
     _lastBonusDate = todayStr;
     _xp += 15; 
     
@@ -156,16 +209,19 @@ class TrainerProvider extends ChangeNotifier {
       _streak = 1;
     } else {
       final lastDate = DateTime.parse(_lastStreakDate);
-      final lastStreakDay = DateTime(lastDate.year, lastDate.month, lastDate.day);
-      final todayDate = DateTime(today.year, today.month, today.day);
-      final diff = todayDate.difference(lastStreakDay).inDays;
+      final diff = DateTime(today.year, today.month, today.day)
+          .difference(DateTime(lastDate.year, lastDate.month, lastDate.day))
+          .inDays;
       
-      if (diff == 1) _streak++;
-      else if (diff > 1) _streak = 1;
+      if (diff == 1) {
+        _streak++;
+      } else if (diff > 1) {
+        _streak = 1; // Dün girmediyse seri 1'den başlar
+      }
     }
+    
     _lastStreakDate = todayStr;
     
-    final prefs = await SharedPreferences.getInstance();
     await prefs.setString('last_bonus_date', todayStr);
     await prefs.setString('last_streak_date', todayStr);
     await prefs.setInt('trainer_xp', _xp);

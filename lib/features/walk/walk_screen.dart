@@ -6,7 +6,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
-import 'package:pokelife/features/walk/map_screen.dart'; // Harita ekranını import ettik
+import 'package:pokelife/core/providers/quest_provider.dart'; // YENİ: Görev sağlayıcı bağlantısı
+import 'package:pokelife/features/walk/map_screen.dart';
 
 class WalkScreen extends StatefulWidget {
   const WalkScreen({super.key});
@@ -15,23 +16,36 @@ class WalkScreen extends StatefulWidget {
   State<WalkScreen> createState() => _WalkScreenState();
 }
 
-class _WalkScreenState extends State<WalkScreen> {
-  late Stream<StepCount> _stepCountStream;
-  late Stream<PedestrianStatus> _pedestrianStatusStream;
+class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
+  StreamSubscription<StepCount>? _stepCountStreamSubscription;
+  StreamSubscription<PedestrianStatus>? _pedestrianStatusStreamSubscription;
   
   String _status = 'STOPPED';
-  int _lastSystemStep = 0; 
-  
   bool isSearching = false;
   bool _permissionGranted = false;
-  
-  // Aktif seçilen bölge
   String _currentArea = 'Whispering Forest';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _requestPermissionAndInit();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopPedometer();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_permissionGranted) _initPedometer();
+    } else if (state == AppLifecycleState.paused) {
+      _stopPedometer();
+    }
   }
 
   Future<void> _requestPermissionAndInit() async {
@@ -43,23 +57,28 @@ class _WalkScreenState extends State<WalkScreen> {
   }
 
   void _initPedometer() {
-    _pedestrianStatusStream = Pedometer.pedestrianStatusStream;
-    _pedestrianStatusStream.listen(onPedestrianStatusChanged).onError((e) {});
-    _stepCountStream = Pedometer.stepCountStream;
-    _stepCountStream.listen(onStepCount).onError((e) {});
+    _stopPedometer();
+
+    _pedestrianStatusStreamSubscription = Pedometer.pedestrianStatusStream
+        .listen(onPedestrianStatusChanged, onError: (e) {});
+        
+    _stepCountStreamSubscription = Pedometer.stepCountStream
+        .listen(onStepCount, onError: (e) {});
+  }
+
+  void _stopPedometer() {
+    _stepCountStreamSubscription?.cancel();
+    _pedestrianStatusStreamSubscription?.cancel();
   }
 
   void onStepCount(StepCount event) {
     if (mounted) {
-      if (_lastSystemStep == 0) {
-        _lastSystemStep = event.steps; 
-        return; 
-      }
-      int delta = event.steps - _lastSystemStep;
-      if (delta > 0) {
-        context.read<TrainerProvider>().addSteps(delta);
-      }
-      _lastSystemStep = event.steps; 
+      // 1. Donanım adımını TrainerProvider'a gönderip arka plan sayacını işletiyoruz
+      context.read<TrainerProvider>().processHardwareStep(event.steps);
+
+      // 2. Güncel günlük adımı QuestProvider'a bildirerek görev ilerlemesini güncelliyoruz
+      int currentDaily = context.read<TrainerProvider>().dailySteps;
+      context.read<QuestProvider>().updateStepProgress(currentDaily);
     }
   }
 
@@ -67,31 +86,26 @@ class _WalkScreenState extends State<WalkScreen> {
     if (mounted) setState(() => _status = event.status);
   }
 
-  // BÖLGELERE VE SAATE GÖRE POKÉMON HAVUZU
   int _getEncounterId(bool isRare) {
     final hour = DateTime.now().hour;
     final random = Random();
     List<int> pool;
 
     if (isRare) {
-      pool = [133, 147, 143, 131, 149]; // Nadir Havuz
+      pool = [133, 147, 143, 131, 149]; 
     } else if (_currentArea == 'Azure Lake') {
-      // 🌊 Göl Bölgesi: Su Tipleri (Squirtle, Psyduck, Poliwag, Goldeen)
       pool = [7, 54, 60, 118]; 
     } else if (_currentArea == 'Rocky Cave') {
-      // ⛰️ Mağara Bölgesi: Kaya/Yer Tipleri (Geodude, Zubat, Onix)
       pool = [74, 41, 95]; 
     } else {
-      // 🌲 Orman Bölgesi (Saatlere göre)
       if (hour < 6 || hour >= 20) {
-        pool = [41, 92, 35, 197]; // Gece
+        pool = [41, 92, 35, 197]; 
       } else if (hour >= 6 && hour < 11) {
-        pool = [16, 69, 10, 43]; // Sabah
+        pool = [16, 69, 10, 43]; 
       } else {
-        pool = [25, 1, 10, 16]; // Gündüz
+        pool = [25, 1, 10, 16]; 
       }
     }
-    
     return pool[random.nextInt(pool.length)];
   }
 
@@ -125,19 +139,41 @@ class _WalkScreenState extends State<WalkScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  GestureDetector(onTap: () => Navigator.pop(context), child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(border: Border.all(color: AppColors.blue, width: 2)), child: const Text('RUN', style: TextStyle(color: AppColors.blue, fontSize: 10)))),
-                  GestureDetector(onTap: () {
-    Navigator.pop(context);
-    // YENİ: Pokémon'u Pokedex'e kaydet
-    context.read<TrainerProvider>().catchPokemon(pokeId);
-    context.read<TrainerProvider>().addXp(isRare ? 50 : 20);
-    
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('CAUGHT #$pokeId! +${isRare ? 50 : 20} XP!', style: const TextStyle(fontSize: 10, color: AppColors.navy)), 
-      backgroundColor: AppColors.green, 
-      duration: const Duration(seconds: 2)
-    ));
-  }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: AppColors.green, border: Border.all(color: AppColors.green, width: 2)), child: const Text('CATCH', style: TextStyle(color: AppColors.navy, fontSize: 10, fontWeight: FontWeight.bold))))
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context), 
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), 
+                      decoration: BoxDecoration(border: Border.all(color: AppColors.blue, width: 2)), 
+                      child: const Text('RUN', style: TextStyle(color: AppColors.blue, fontSize: 10))
+                    )
+                  ),
+                  GestureDetector(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      bool isNew = await context.read<TrainerProvider>().catchPokemon(pokeId);
+                      
+                      int xpGained = isNew ? (isRare ? 50 : 20) : 10;
+                      context.read<TrainerProvider>().addXp(xpGained);
+                      
+                      // Yeni Pokémon yakalandıysa görev ilerlemesini artırıyoruz
+                      if (isNew) {
+                        context.read<QuestProvider>().addCatchProgress();
+                      }
+                      
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(isNew ? 'CAUGHT #$pokeId! +$xpGained XP!' : 'CAUGHT AGAIN! +$xpGained XP', style: const TextStyle(fontSize: 10, color: AppColors.navy)), 
+                          backgroundColor: AppColors.green, 
+                          duration: const Duration(seconds: 2)
+                        ));
+                      }
+                    }, 
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), 
+                      decoration: BoxDecoration(color: AppColors.green, border: Border.all(color: AppColors.green, width: 2)), 
+                      child: const Text('CATCH', style: TextStyle(color: AppColors.navy, fontSize: 10, fontWeight: FontWeight.bold))
+                    )
+                  ),
                 ],
               )
             ],
@@ -162,7 +198,6 @@ class _WalkScreenState extends State<WalkScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // Üst Başlık ve Harita Açma Butonu
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -188,7 +223,13 @@ class _WalkScreenState extends State<WalkScreen> {
           ),
           const SizedBox(height: 16),
 
-          // 1. KAMP VEYO SEÇİLEN BÖLGE DURUMU
+          if (!_permissionGranted)
+            Container(
+              padding: const EdgeInsets.all(16), margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: Colors.redAccent, width: 2)),
+              child: const Text('MOTION PERMISSION REQUIRED TO TRACK STEPS.', style: TextStyle(color: AppColors.yellow, fontSize: 9)),
+            ),
+
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -218,7 +259,6 @@ class _WalkScreenState extends State<WalkScreen> {
           
           const SizedBox(height: 20),
 
-          // 2. KİLOMETRE TAŞLARI
           const Text('MILESTONE GOALS (TODAY)', style: TextStyle(color: AppColors.yellow, fontSize: 10)),
           const SizedBox(height: 12),
           Container(
@@ -255,7 +295,6 @@ class _WalkScreenState extends State<WalkScreen> {
             const SizedBox(height: 12),
           ],
 
-          // GÜNLÜK İLERLEME BARI
           const Text('DAILY STEP PROGRESS', style: TextStyle(color: AppColors.yellow, fontSize: 10)),
           const SizedBox(height: 10),
           Container(

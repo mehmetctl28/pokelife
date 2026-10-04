@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:async';
 import 'package:pokelife/core/theme/app_colors.dart';
-import 'package:pokelife/features/journal/journal_screen.dart';
-import 'package:pokelife/features/walk/walk_screen.dart';
-import 'package:pokelife/features/quests/quest_screen.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
+import 'package:pokelife/features/walk/walk_screen.dart';
+import 'package:pokelife/features/journal/journal_screen.dart';
+import 'package:pokelife/features/quests/quest_screen.dart';
 import 'package:pokelife/features/pokedex/pokedex_screen.dart';
 
 class HomeScreen extends StatefulWidget {

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:pokelife/core/providers/trainer_provider.dart';
+import 'package:pokelife/core/providers/quest_provider.dart';
 import 'package:pokelife/core/theme/app_theme.dart';
 import 'package:pokelife/features/home/home_screen.dart';
 
@@ -7,11 +10,17 @@ class PokelifeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'PokéLife',
-      theme: AppTheme.darkTheme,
-      home: const HomeScreen(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => TrainerProvider()),
+        ChangeNotifierProvider(create: (_) => QuestProvider()),
+      ],
+      child: MaterialApp(
+        title: 'PokéLife',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        home: const HomeScreen(),
+      ),
     );
   }
 }
