@@ -14,27 +14,36 @@ class PokedexScreen extends StatelessWidget {
     143: 'SNORLAX', 147: 'DRATINI', 149: 'DRAGONITE', 151: 'MEW'
   };
 
+  // Dinamik Tür Bulucu
+  String _getPokeType(int id) {
+    if ([1, 2, 3, 43, 69].contains(id)) return 'GRASS / POISON';
+    if ([4, 5, 6].contains(id)) return 'FIRE';
+    if ([7, 8, 9, 54, 60, 118, 131].contains(id)) return 'WATER';
+    if ([25].contains(id)) return 'ELECTRIC';
+    if ([74, 95].contains(id)) return 'ROCK / GROUND';
+    if ([147, 149].contains(id)) return 'DRAGON';
+    if ([92].contains(id)) return 'GHOST / POISON';
+    return 'NORMAL'; // Eevee, Snorlax vb.
+  }
+
   @override
   Widget build(BuildContext context) {
     final trainer = context.watch<TrainerProvider>();
     final caughtIds = trainer.caughtPokemonIds;
     
-    // Partner Pokémon (Şimdilik ilk yakalanan veya Bulbasaur)
-    final partnerId = caughtIds.isNotEmpty ? caughtIds.first : 1;
+    // YENİ: Artık sabit ilk pokemon değil, kullanıcının seçtiği partnerId okunuyor
+    final partnerId = trainer.partnerId;
     final partnerName = pokemonNames[partnerId] ?? 'UNKNOWN';
 
-    // Friendship = Seri (Streak) sayısına göre maksimum 5 kalp
     final int friendship = (trainer.streak).clamp(0, 5);
     String hearts = '♥️' * friendship + '♡' * (5 - friendship);
 
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(20),
-        // Ekran taşmasını engellemek için ana yapıyı Column yapıp, alt kısmı Expanded ile sarıyoruz
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // DSi Tarzı Üst Başlık
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -48,12 +57,11 @@ class PokedexScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // 🐾 MY TEAM / PARTNER KARTI (Nintendo Çift Ekran Üst Kısım Hissiyatı)
             Container(
               decoration: BoxDecoration(
                 color: AppColors.darkBlue,
                 border: Border.all(color: AppColors.cream, width: 2),
-                boxShadow: [BoxShadow(color: AppColors.blue.withOpacity(0.2), offset: const Offset(4, 4))]
+                boxShadow: [BoxShadow(color: AppColors.blue.withValues(alpha: 0.2), offset: const Offset(4, 4))]
               ),
               child: Column(
                 children: [
@@ -68,7 +76,6 @@ class PokedexScreen extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Sol Taraf: Sprite
                         Container(
                           width: 80,
                           height: 80,
@@ -84,7 +91,6 @@ class PokedexScreen extends StatelessWidget {
                         ),
                         const SizedBox(width: 16),
                         
-                        // Sağ Taraf: İstatistikler
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -98,7 +104,6 @@ class PokedexScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               
-                              // XP Barı
                               Container(
                                 height: 8,
                                 decoration: BoxDecoration(border: Border.all(color: AppColors.blue, width: 1)),
@@ -119,7 +124,6 @@ class PokedexScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Aksiyon Butonları
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.navy, width: 2))),
@@ -137,7 +141,6 @@ class PokedexScreen extends StatelessWidget {
 
             const SizedBox(height: 24),
 
-            // Alt Ekran: COLLECTION BAŞLIĞI
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -147,41 +150,40 @@ class PokedexScreen extends StatelessWidget {
             ),
             const Divider(color: AppColors.blue, thickness: 2, height: 16),
 
-            // 🎒 COLLECTION LİSTESİ (Taşmayı önlemek için Expanded ve GridView)
             Expanded(
               child: GridView.builder(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3, // Yan yana 3 tane
-                  childAspectRatio: 2.5, // Kutu oranı (geniş ve kısa)
+                  crossAxisCount: 3, 
+                  childAspectRatio: 2.5, 
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
                 ),
-                // 1'den 151'e kadar tüm Pokémon'ları listele
                 itemCount: 151,
                 itemBuilder: (context, index) {
                   final int pokeId = index + 1;
                   final bool isCaught = caughtIds.contains(pokeId);
+                  final bool isPartner = (pokeId == partnerId);
                   
                   return GestureDetector(
                     onTap: () {
-                      if (isCaught) _showPokeDetails(context, pokeId, pokemonNames[pokeId] ?? 'UNKNOWN');
+                      if (isCaught) _showPokeDetails(context, pokeId, pokemonNames[pokeId] ?? 'UNKNOWN', isPartner);
                     },
                     child: Container(
                       decoration: BoxDecoration(
-                        color: AppColors.darkBlue,
-                        border: Border.all(color: isCaught ? AppColors.green : AppColors.navy, width: 1),
+                        color: isPartner ? AppColors.navy : AppColors.darkBlue,
+                        border: Border.all(color: isPartner ? AppColors.yellow : (isCaught ? AppColors.green : AppColors.navy), width: isPartner ? 2 : 1),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             pokeId.toString().padLeft(3, '0'),
-                            style: TextStyle(color: isCaught ? AppColors.cream : AppColors.blue, fontSize: 10),
+                            style: TextStyle(color: isPartner ? AppColors.yellow : (isCaught ? AppColors.cream : AppColors.blue), fontSize: 10, fontWeight: isPartner ? FontWeight.bold : FontWeight.normal),
                           ),
                           const SizedBox(width: 8),
                           Icon(
-                            isCaught ? Icons.check : Icons.question_mark,
-                            color: isCaught ? AppColors.green : AppColors.navy,
+                            isCaught ? (isPartner ? Icons.star : Icons.check) : Icons.question_mark,
+                            color: isPartner ? AppColors.yellow : (isCaught ? AppColors.green : AppColors.navy),
                             size: 12,
                           ),
                         ],
@@ -205,8 +207,7 @@ class PokedexScreen extends StatelessWidget {
     );
   }
 
-  // Tıklanınca açılan detay popup'ı
-  void _showPokeDetails(BuildContext context, int pokeId, String name) {
+  void _showPokeDetails(BuildContext context, int pokeId, String name, bool isPartner) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -231,15 +232,37 @@ class PokedexScreen extends StatelessWidget {
               const SizedBox(height: 16),
               Text(name, style: const TextStyle(color: AppColors.cream, fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              const Text('Type: NORMAL / ENCOUNTER: WILD', style: TextStyle(color: AppColors.blue, fontSize: 8)),
+              
+              // Dinamik Tür Gösterimi
+              Text('Type: ${_getPokeType(pokeId)} / STATUS: ${isPartner ? "PARTNER" : "IN BOX"}', style: const TextStyle(color: AppColors.blue, fontSize: 8)),
               const SizedBox(height: 20),
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  decoration: BoxDecoration(border: Border.all(color: AppColors.green, width: 2)),
-                  child: const Text('CLOSE', style: TextStyle(color: AppColors.green, fontSize: 10)),
-                ),
+              
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(border: Border.all(color: AppColors.cream, width: 1)),
+                      child: const Text('CLOSE', style: TextStyle(color: AppColors.cream, fontSize: 10)),
+                    ),
+                  ),
+                  
+                  // PARTNER YAP BUTONU (Sadece o anki partner değilse göster)
+                  if (!isPartner)
+                    GestureDetector(
+                      onTap: () {
+                        context.read<TrainerProvider>().setPartner(pokeId);
+                        Navigator.pop(context);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(color: AppColors.green, border: Border.all(color: AppColors.green, width: 1)),
+                        child: const Text('SET PARTNER', style: TextStyle(color: AppColors.navy, fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                ],
               )
             ],
           ),

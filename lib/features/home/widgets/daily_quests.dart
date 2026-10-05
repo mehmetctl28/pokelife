@@ -8,50 +8,59 @@ class DailyQuestsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Widget kendi Provider'ını kendi dinliyor
     final questProvider = context.watch<QuestProvider>();
-    final quests = questProvider.dailyQuests;
 
-    if (quests.isEmpty) {
-      return const SizedBox.shrink();
+    // Boş dönmek (ekranı zıplatmak) yerine retro bir yükleniyor durumu gösteriyoruz
+    if (questProvider.dailyQuests.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.blue, width: 2)),
+        child: const Center(child: Text('PREPARING ADVENTURE...', style: TextStyle(color: AppColors.blue, fontSize: 10))),
+      );
     }
 
-    // Tamamlanmayan ilk görevi ana sayfada mini kart olarak gösterelim
-    final activeQuest = quests.firstWhere(
-      (q) => !q.isClaimed,
-      orElse: () => quests.first,
+    final activeQuest = questProvider.dailyQuests.firstWhere(
+      (q) => !q.isClaimed, 
+      orElse: () => questProvider.dailyQuests.last
     );
-
-    double progressValue = (activeQuest.progress / activeQuest.target).clamp(0.0, 1.0);
+    
+    final String questTitle = activeQuest.title;
+    final double questProgress = (activeQuest.progress / activeQuest.target).clamp(0.0, 1.0);
+    final String questProgressText = "${(questProgress * 100).toInt()}%";
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.darkBlue,
-        border: Border.all(color: AppColors.blue, width: 2),
+        color: AppColors.darkBlue, 
+        border: Border.all(color: AppColors.blue, width: 2)
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          const Row(
             children: [
-              const Text('ACTIVE QUEST', style: TextStyle(color: AppColors.yellow, fontSize: 8)),
-              Text('+${activeQuest.rewardXp} XP', style: const TextStyle(color: AppColors.green, fontSize: 8, fontWeight: FontWeight.bold)),
+              Icon(Icons.flag, color: AppColors.yellow, size: 14), 
+              SizedBox(width: 8), 
+              Text('ACTIVE QUEST', style: TextStyle(color: AppColors.yellow, fontSize: 10))
+            ]
+          ),
+          const SizedBox(height: 12),
+          Text(questTitle, style: const TextStyle(color: AppColors.cream, fontSize: 10)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: LinearProgressIndicator(
+                  value: questProgress, 
+                  minHeight: 6, 
+                  backgroundColor: AppColors.navy, 
+                  valueColor: const AlwaysStoppedAnimation<Color>(AppColors.yellow)
+                )
+              ),
+              const SizedBox(width: 12),
+              Text(questProgressText, style: const TextStyle(color: AppColors.blue, fontSize: 8)),
             ],
-          ),
-          const SizedBox(height: 6),
-          Text(activeQuest.title, style: const TextStyle(color: AppColors.cream, fontSize: 10, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          LinearProgressIndicator(
-            value: progressValue,
-            minHeight: 6,
-            backgroundColor: AppColors.navy,
-            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.green),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Progress: ${activeQuest.progress} / ${activeQuest.target}', 
-            style: const TextStyle(color: AppColors.blue, fontSize: 7),
           ),
         ],
       ),

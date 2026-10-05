@@ -78,7 +78,7 @@ class QuestProvider extends ChangeNotifier {
   bool claimReward(String questId) {
     final questIndex = _dailyQuests.indexWhere((q) => q.id == questId);
     if (questIndex != -1) {
-      final q = _dailyQuests[questIndex]; // Düzeltildi (_dailyQuests yapıldı)
+      final q = _dailyQuests[questIndex];
       if (q.progress >= q.target && !q.isClaimed) {
         q.isClaimed = true;
         _saveQuests();
@@ -87,5 +87,17 @@ class QuestProvider extends ChangeNotifier {
       }
     }
     return false;
+  }
+
+  // YENİ: TrainerProvider "Gün değişti" dediğinde bunu çağırıp görevleri sıfırlayacak
+  void forceResetQuestsForNewDay() async {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    if (_lastQuestDate != today) {
+      _generateDailyQuests();
+      _lastQuestDate = today;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_quest_date', today);
+      notifyListeners();
+    }
   }
 }

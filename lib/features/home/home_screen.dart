@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
-import 'package:pokelife/core/providers/quest_provider.dart';
 import 'package:pokelife/features/walk/walk_screen.dart';
 import 'package:pokelife/features/journal/journal_screen.dart';
 import 'package:pokelife/features/quests/quest_screen.dart';
 import 'package:pokelife/features/pokedex/pokedex_screen.dart';
+import 'package:pokelife/features/home/widgets/daily_quests.dart'; // YENİ WIDGET
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -34,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Widget _buildHomePage(TrainerProvider trainer, QuestProvider questProvider) {
+  Widget _buildHomePage(TrainerProvider trainer) {
     final hour = DateTime.now().hour;
     final isNight = hour < 6 || hour > 18;
     final timeString = "${hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}";
@@ -43,23 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final groundColor = isNight ? const Color(0xFF2A5934) : const Color(0xFF52A55C);
     final skyIcon = isNight ? '🌙' : '☀️';
 
-    // Dinamik Partner: Pokedex'teki ilk Pokémon, yoksa Bulbasaur (1)
-    final int partnerId = trainer.caughtPokemonIds.isNotEmpty ? trainer.caughtPokemonIds.first : 1;
-    
-    // Dinamik Görev: Tamamlanmamış ilk görevi bul, yoksa en son görevi göster
-    String questTitle = "All Caught Up!";
-    double questProgress = 1.0;
-    String questProgressText = "100%";
-    
-    if (questProvider.dailyQuests.isNotEmpty) {
-      final activeQuest = questProvider.dailyQuests.firstWhere(
-        (q) => !q.isClaimed, 
-        orElse: () => questProvider.dailyQuests.last
-      );
-      questTitle = activeQuest.title;
-      questProgress = (activeQuest.progress / activeQuest.target).clamp(0.0, 1.0);
-      questProgressText = "${(questProgress * 100).toInt()}%";
-    }
+    final int partnerId = trainer.partnerId;
 
     return SafeArea(
       child: ListView(
@@ -68,7 +52,6 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Day yazısı artık oyuncunun oyuna giriş serisine bağlı
               Text('DAY ${trainer.streak > 0 ? trainer.streak : 1}', style: const TextStyle(color: AppColors.cream, fontSize: 12)),
               Text('$timeString $skyIcon', style: const TextStyle(color: AppColors.yellow, fontSize: 12)),
             ],
@@ -109,7 +92,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Opacity(opacity: _showHeart ? 1.0 : 0.0, child: const Text('❤️', style: TextStyle(fontSize: 18))),
                         const SizedBox(height: 4),
-                        // Sabit Bulbasaur yerine gerçek partner görseli
                         Image.network('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/diamond-pearl/$partnerId.png', height: 100, fit: BoxFit.contain, filterQuality: FilterQuality.none),
                       ],
                     ),
@@ -154,27 +136,8 @@ class _HomeScreenState extends State<HomeScreen> {
           
           const SizedBox(height: 28),
           
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.blue, width: 2)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(children: [Icon(Icons.flag, color: AppColors.yellow, size: 14), SizedBox(width: 8), Text('ACTIVE QUEST', style: TextStyle(color: AppColors.yellow, fontSize: 10))]),
-                const SizedBox(height: 12),
-                // Sabit görev yerine QuestProvider'dan gelen gerçek anlık görev
-                Text(questTitle, style: const TextStyle(color: AppColors.cream, fontSize: 10)),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: LinearProgressIndicator(value: questProgress, minHeight: 6, backgroundColor: AppColors.navy, valueColor: const AlwaysStoppedAnimation<Color>(AppColors.yellow))),
-                    const SizedBox(width: 12),
-                    Text(questProgressText, style: const TextStyle(color: AppColors.blue, fontSize: 8)),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          // Görev kartı temiz şekilde çağrılıyor
+          const DailyQuestsWidget(),
           
           const SizedBox(height: 24),
           
@@ -210,9 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final trainer = context.watch<TrainerProvider>();
-    final questProvider = context.watch<QuestProvider>(); 
 
-    // YENİ: Veriler henüz hafızadan okunmadıysa Yükleniyor ekranı göster
     if (!trainer.isInitialized) {
       return const Scaffold(
         backgroundColor: AppColors.darkBlue,
@@ -233,25 +194,33 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _buildHomePage(trainer, questProvider),
+          _buildHomePage(trainer), 
           const WalkScreen(),
           const JournalScreen(),
           const QuestScreen(),
           const PokedexScreen(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: AppColors.darkBlue,
-        indicatorColor: AppColors.purple.withValues(alpha: 0.4), 
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: 'HOME'),
-          NavigationDestination(icon: Icon(Icons.directions_walk), label: 'WALK'),
-          NavigationDestination(icon: Icon(Icons.book), label: 'LOG'),
-          NavigationDestination(icon: Icon(Icons.star), label: 'TASK'),
-          NavigationDestination(icon: Icon(Icons.catching_pokemon), label: 'DEX')
-        ],
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          labelTextStyle: MaterialStateProperty.all(
+            const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.blue),
+          ),
+        ),
+        child: NavigationBar(
+          height: 65,
+          backgroundColor: AppColors.darkBlue,
+          indicatorColor: AppColors.purple.withValues(alpha: 0.4),
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home), label: 'HOME'),
+            NavigationDestination(icon: Icon(Icons.directions_walk), label: 'WALK'),
+            NavigationDestination(icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map), label: 'JOURNEY'),
+            NavigationDestination(icon: Icon(Icons.star_border), selectedIcon: Icon(Icons.star), label: 'TASK'),
+            NavigationDestination(icon: Icon(Icons.catching_pokemon), label: 'DEX'),
+          ],
+        ),
       ),
     );
   }

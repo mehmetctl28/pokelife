@@ -13,6 +13,10 @@ class TrainerProvider extends ChangeNotifier {
   List<int> _caughtPokemonIds = [];
   bool _isInitialized = false;
   int _lastSystemStep = 0;
+  int _partnerId = 1;
+
+  // YENİ: En iyi günlük adım rekoru
+  int _bestDailySteps = 0;
 
   int get xp => _xp;
   int get steps => _steps;
@@ -20,7 +24,19 @@ class TrainerProvider extends ChangeNotifier {
   int get streak => _streak;
   List<int> get caughtPokemonIds => _caughtPokemonIds;
   bool get isInitialized => _isInitialized;
+  int get partnerId => _partnerId;
   
+  // YENİ: Rekoru dışarı açıyoruz
+  int get bestDailySteps => _bestDailySteps;
+  
+  // YENİ: Açılan bölge sayısını toplam adıma göre dinamik hesaplayan getter
+  int get unlockedRegions {
+    if (_steps >= 10000) return 4;
+    if (_steps >= 5000) return 3;
+    if (_steps >= 3000) return 2;
+    return 1;
+  }
+
   int get level {
     int l = 1;
     int totalRequired = 0;
@@ -72,6 +88,10 @@ class TrainerProvider extends ChangeNotifier {
     _lastStreakDate = prefs.getString('last_streak_date') ?? "";
     _lastStepDate = prefs.getString('last_step_date') ?? "";
     _lastSystemStep = prefs.getInt('last_system_step') ?? 0;
+    _partnerId = prefs.getInt('partner_id') ?? 1;
+    
+    // YENİ: Rekoru diskten oku
+    _bestDailySteps = prefs.getInt('best_daily_steps') ?? 0;
     
     final List<String>? savedList = prefs.getStringList('caught_pokemons');
     if (savedList != null) {
@@ -85,14 +105,22 @@ class TrainerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 1. GÜN DÖNÜMÜ KALKANI (Midnight Reset)
+  void setPartner(int pokeId) async {
+    if (_caughtPokemonIds.contains(pokeId)) {
+      _partnerId = pokeId;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('partner_id', pokeId);
+      notifyListeners();
+    }
+  }
+
   bool _handleDateChanges(SharedPreferences prefs) {
     final today = DateTime.now();
     final todayStr = today.toIso8601String().split('T')[0];
     bool isNewDay = false;
 
     if (_lastStepDate.isNotEmpty && _lastStepDate != todayStr) {
-      _dailySteps = 0; // Gece 00:00 oldu, adımları sıfırla
+      _dailySteps = 0; 
       _lastStepDate = todayStr;
       prefs.setInt('trainer_daily_steps', 0);
       prefs.setString('last_step_date', todayStr);
@@ -116,21 +144,18 @@ class TrainerProvider extends ChangeNotifier {
     return isNewDay;
   }
 
-  // 2. DONANIM SAYACI VE ARKA PLAN KORUMASI
   void processHardwareStep(int hardwareStep) async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Önce gün dönümü kontrolü yap, dünün adımları bugüne sarkmasın!
     bool dateChanged = _handleDateChanges(prefs);
 
     if (_lastSystemStep == 0) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
-      if (dateChanged) notifyListeners(); // Sadece gün değiştiyse ekranı güncelle
+      if (dateChanged) notifyListeners(); 
       return;
     }
 
-    // Telefon yeniden başlatıldıysa donanım sayacı 0'lanır. Eksiye düşmeyi engelle.
     if (hardwareStep < _lastSystemStep) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
@@ -138,14 +163,12 @@ class TrainerProvider extends ChangeNotifier {
       return;
     }
 
-    // Uygulama kapalıyken (veya açıkken) atılan farkı bul
     int delta = hardwareStep - _lastSystemStep;
     if (delta > 0) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
-      addSteps(delta); // Bu işlem zaten notifyListeners tetikler
+      addSteps(delta); 
     } else if (dateChanged) {
-      // Adım atılmadı ama gece yarısı olduysa ekranı "0 adım" olarak güncelle
       notifyListeners();
     }
   }
@@ -159,6 +182,12 @@ class TrainerProvider extends ChangeNotifier {
     int oldDaily = _dailySteps;
     _steps += delta;
     _dailySteps += delta;
+    
+    // YENİ: Rekor kırıldıysa kaydet!
+    if (_dailySteps > _bestDailySteps) {
+      _bestDailySteps = _dailySteps;
+      await prefs.setInt('best_daily_steps', _bestDailySteps);
+    }
     
     int earnedXp = (_dailySteps ~/ 250) - (oldDaily ~/ 250);
     
@@ -179,7 +208,6 @@ class TrainerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 3. TEKRAR YAKALAMA İSTİSMARI ENGELLEYİCİ
   Future<bool> catchPokemon(int pokeId) async {
     if (!_caughtPokemonIds.contains(pokeId)) {
       _caughtPokemonIds.add(pokeId);
@@ -191,9 +219,9 @@ class TrainerProvider extends ChangeNotifier {
         _caughtPokemonIds.map((e) => e.toString()).toList(),
       );
       notifyListeners();
-      return true; // Sadece ilk yakalamada True döner
+      return true; 
     }
-    return false; // Zaten koleksiyonda var, XP veya Görev ilerlemesi verilmez
+    return false; 
   }
 
   void claimDailyBonus() async {
