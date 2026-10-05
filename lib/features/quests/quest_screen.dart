@@ -9,19 +9,6 @@ class QuestScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Çözüm: Provider'ı doğrudan ekranın sarmalayıcısı yapıyoruz. Böylece context araması asla başarısız olmaz!
-    return ChangeNotifierProvider(
-      create: (_) => QuestProvider(),
-      child: const QuestScreenContent(),
-    );
-  }
-}
-
-class QuestScreenContent extends StatelessWidget {
-  const QuestScreenContent({super.key});
-
-  @override
-  Widget build(BuildContext context) {
     final questProvider = context.watch<QuestProvider>();
     final trainerProvider = context.read<TrainerProvider>();
     final quests = questProvider.dailyQuests;
@@ -60,9 +47,7 @@ class QuestScreenContent extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppColors.darkBlue,
                       border: Border.all(
-                        color: quest.isClaimed 
-                            ? AppColors.navy 
-                            : (isCompleted ? AppColors.green : AppColors.blue), 
+                        color: quest.isClaimed ? AppColors.navy : (isCompleted ? AppColors.green : AppColors.blue), 
                         width: 2,
                       ),
                     ),
@@ -75,18 +60,11 @@ class QuestScreenContent extends StatelessWidget {
                             Flexible(
                               child: Text(
                                 quest.title, 
-                                style: TextStyle(
-                                  color: quest.isClaimed ? AppColors.blue : AppColors.cream, 
-                                  fontSize: 10, 
-                                  fontWeight: FontWeight.bold
-                                ),
+                                style: TextStyle(color: quest.isClaimed ? AppColors.blue : AppColors.cream, fontSize: 10, fontWeight: FontWeight.bold),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Text(
-                              '+${quest.rewardXp} XP', 
-                              style: const TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
+                            Text('+${quest.rewardXp} XP', style: const TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -94,41 +72,25 @@ class QuestScreenContent extends StatelessWidget {
                           value: progressValue,
                           minHeight: 6,
                           backgroundColor: AppColors.navy,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            quest.isClaimed ? AppColors.blue : (isCompleted ? AppColors.green : AppColors.yellow),
-                          ),
+                          valueColor: AlwaysStoppedAnimation<Color>(quest.isClaimed ? AppColors.blue : (isCompleted ? AppColors.green : AppColors.yellow)),
                         ),
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              'Progress: ${quest.progress} / ${quest.target}', 
-                              style: const TextStyle(color: AppColors.blue, fontSize: 8),
-                            ),
+                            Text('Progress: ${quest.progress} / ${quest.target}', style: const TextStyle(color: AppColors.blue, fontSize: 8)),
                             if (quest.isClaimed)
                               const Text('CLAIMED ✓', style: TextStyle(color: AppColors.blue, fontSize: 8, fontWeight: FontWeight.bold))
                             else if (isCompleted)
                               GestureDetector(
                                 onTap: () {
-                                  bool success = questProvider.claimReward(quest.id);
-                                  if (success) {
+                                  if (questProvider.claimReward(quest.id)) {
                                     trainerProvider.addXp(quest.rewardXp);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Claimed +${quest.rewardXp} XP!', style: const TextStyle(fontSize: 10, color: AppColors.navy)),
-                                        backgroundColor: AppColors.green,
-                                        duration: const Duration(seconds: 2),
-                                      ),
-                                    );
                                   }
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.green,
-                                    border: Border.all(color: AppColors.green, width: 1),
-                                  ),
+                                  decoration: BoxDecoration(color: AppColors.green, border: Border.all(color: AppColors.green, width: 1)),
                                   child: const Text('CLAIM', style: TextStyle(color: AppColors.navy, fontSize: 8, fontWeight: FontWeight.bold)),
                                 ),
                               )

@@ -6,7 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
-import 'package:pokelife/core/providers/quest_provider.dart'; // YENİ: Görev sağlayıcı bağlantısı
+import 'package:pokelife/core/providers/quest_provider.dart';
 import 'package:pokelife/features/walk/map_screen.dart';
 
 class WalkScreen extends StatefulWidget {
@@ -73,10 +73,8 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
 
   void onStepCount(StepCount event) {
     if (mounted) {
-      // 1. Donanım adımını TrainerProvider'a gönderip arka plan sayacını işletiyoruz
       context.read<TrainerProvider>().processHardwareStep(event.steps);
 
-      // 2. Güncel günlük adımı QuestProvider'a bildirerek görev ilerlemesini güncelliyoruz
       int currentDaily = context.read<TrainerProvider>().dailySteps;
       context.read<QuestProvider>().updateStepProgress(currentDaily);
     }
@@ -150,23 +148,25 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                   GestureDetector(
                     onTap: () async {
                       Navigator.pop(context);
+                      
+                      // Asenkron işlem başlıyor
                       bool isNew = await context.read<TrainerProvider>().catchPokemon(pokeId);
+                      
+                      // Analyze uyarısı çözümü: Asenkron işlemden sonra widget'ın hâlâ ekranda olduğunu doğruluyoruz
+                      if (!context.mounted) return;
                       
                       int xpGained = isNew ? (isRare ? 50 : 20) : 10;
                       context.read<TrainerProvider>().addXp(xpGained);
                       
-                      // Yeni Pokémon yakalandıysa görev ilerlemesini artırıyoruz
                       if (isNew) {
                         context.read<QuestProvider>().addCatchProgress();
                       }
                       
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(isNew ? 'CAUGHT #$pokeId! +$xpGained XP!' : 'CAUGHT AGAIN! +$xpGained XP', style: const TextStyle(fontSize: 10, color: AppColors.navy)), 
-                          backgroundColor: AppColors.green, 
-                          duration: const Duration(seconds: 2)
-                        ));
-                      }
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(isNew ? 'CAUGHT #$pokeId! +$xpGained XP!' : 'CAUGHT AGAIN! +$xpGained XP', style: const TextStyle(fontSize: 10, color: AppColors.navy)), 
+                        backgroundColor: AppColors.green, 
+                        duration: const Duration(seconds: 2)
+                      ));
                     }, 
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), 
@@ -266,13 +266,13 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
             decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: AppColors.blue, width: 2)),
             child: Column(
               children: [
-                _buildMilestoneRow('1,000 Steps (XP)', canGetXp, '${steps >= 1000 ? "UNLOCKED" : "${1000 - steps}L"}', 'Every 1,000 steps helps generate experience points for your partner.', context),
+                _buildMilestoneRow('1,000 Steps (XP)', canGetXp, canGetXp ? "UNLOCKED" : "${1000 - steps}L", 'Every 1,000 steps helps generate experience points for your partner.', context),
                 const Divider(color: AppColors.darkBlue, height: 16),
-                _buildMilestoneRow('3,000 Steps (Lake Map)', isLakeUnlocked, '${isLakeUnlocked ? "UNLOCKED" : "${3000 - steps}L"}', 'Unlocks the Azure Lake biome on your world map.', context),
+                _buildMilestoneRow('3,000 Steps (Lake Map)', isLakeUnlocked, isLakeUnlocked ? "UNLOCKED" : "${3000 - steps}L", 'Unlocks the Azure Lake biome on your world map.', context),
                 const Divider(color: AppColors.darkBlue, height: 16),
-                _buildMilestoneRow('5,000 Steps (Wild)', canSearchNormal, '${canSearchNormal ? "READY!" : "${5000 - steps}L"}', 'Allows you to search current area for wild Pokémon encounters.', context),
+                _buildMilestoneRow('5,000 Steps (Wild)', canSearchNormal, canSearchNormal ? "READY!" : "${5000 - steps}L", 'Allows you to search current area for wild Pokémon encounters.', context),
                 const Divider(color: AppColors.darkBlue, height: 16),
-                _buildMilestoneRow('10,000 Steps (Rare)', canSearchRare, '${canSearchRare ? "READY!" : "${10000 - steps}L"}', 'Unlocks deep exploration for rare and legendary Pokémon.', context),
+                _buildMilestoneRow('10,000 Steps (Rare)', canSearchRare, canSearchRare ? "READY!" : "${10000 - steps}L", 'Unlocks deep exploration for rare and legendary Pokémon.', context),
               ],
             ),
           ),

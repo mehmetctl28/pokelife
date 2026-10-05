@@ -12,8 +12,6 @@ class TrainerProvider extends ChangeNotifier {
   
   List<int> _caughtPokemonIds = [];
   bool _isInitialized = false;
-
-  // YENİ: Donanımın son bildirdiği toplam adım (Uygulama kapalıyken atılanları bulmak için)
   int _lastSystemStep = 0;
 
   int get xp => _xp;
@@ -73,8 +71,6 @@ class TrainerProvider extends ChangeNotifier {
     _streak = prefs.getInt('trainer_streak') ?? 0;
     _lastStreakDate = prefs.getString('last_streak_date') ?? "";
     _lastStepDate = prefs.getString('last_step_date') ?? "";
-    
-    // YENİ: Diske kaydedilen son donanım adımı verisini yükle
     _lastSystemStep = prefs.getInt('last_system_step') ?? 0;
     
     final List<String>? savedList = prefs.getStringList('caught_pokemons');
@@ -89,23 +85,23 @@ class TrainerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Tarih ve Seri Kontrolü Tek Merkezde
-  void _handleDateChanges(SharedPreferences prefs) {
+  // 1. GÜN DÖNÜMÜ KALKANI (Midnight Reset)
+  bool _handleDateChanges(SharedPreferences prefs) {
     final today = DateTime.now();
     final todayStr = today.toIso8601String().split('T')[0];
+    bool isNewDay = false;
 
-    // Gün değiştiyse günlük adımları sıfırla
     if (_lastStepDate.isNotEmpty && _lastStepDate != todayStr) {
-      _dailySteps = 0;
+      _dailySteps = 0; // Gece 00:00 oldu, adımları sıfırla
       _lastStepDate = todayStr;
       prefs.setInt('trainer_daily_steps', 0);
       prefs.setString('last_step_date', todayStr);
+      isNewDay = true;
     } else if (_lastStepDate.isEmpty) {
       _lastStepDate = todayStr;
       prefs.setString('last_step_date', todayStr);
     }
 
-    // Seri (Streak) bozulma kontrolü
     if (_lastStreakDate.isNotEmpty) {
       final lastDate = DateTime.parse(_lastStreakDate);
       final diff = DateTime(today.year, today.month, today.day)
@@ -117,22 +113,28 @@ class TrainerProvider extends ChangeNotifier {
         prefs.setInt('trainer_streak', 0);
       }
     }
+    return isNewDay;
   }
 
-  // YENİ: UYGULAMA KAPALIYKEN ATILAN ADIMLARI HESAPLAYAN FONKSİYON
+  // 2. DONANIM SAYACI VE ARKA PLAN KORUMASI
   void processHardwareStep(int hardwareStep) async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // Önce gün dönümü kontrolü yap, dünün adımları bugüne sarkmasın!
+    bool dateChanged = _handleDateChanges(prefs);
 
     if (_lastSystemStep == 0) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
+      if (dateChanged) notifyListeners(); // Sadece gün değiştiyse ekranı güncelle
       return;
     }
 
-    // Eğer telefon yeniden başlatıldıysa donanım sayacı 0'lanır.
+    // Telefon yeniden başlatıldıysa donanım sayacı 0'lanır. Eksiye düşmeyi engelle.
     if (hardwareStep < _lastSystemStep) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
+      if (dateChanged) notifyListeners();
       return;
     }
 
@@ -141,11 +143,13 @@ class TrainerProvider extends ChangeNotifier {
     if (delta > 0) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
-      addSteps(delta); // Aradaki farkı normal adım ekleme sistemine yolla
+      addSteps(delta); // Bu işlem zaten notifyListeners tetikler
+    } else if (dateChanged) {
+      // Adım atılmadı ama gece yarısı olduysa ekranı "0 adım" olarak güncelle
+      notifyListeners();
     }
   }
 
-  // Atlanan Eşikleri Doğru Hesaplama Modülü
   void addSteps(int delta) async {
     if (delta <= 0) return;
     
@@ -156,7 +160,6 @@ class TrainerProvider extends ChangeNotifier {
     _steps += delta;
     _dailySteps += delta;
     
-    // Modulo (%) yerine tam sayı bölmesi ile kesin eşik tespiti
     int earnedXp = (_dailySteps ~/ 250) - (oldDaily ~/ 250);
     
     if (earnedXp > 0) {
@@ -176,7 +179,7 @@ class TrainerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Tekrar Yakalama İstismarını Engelleme Modülü
+  // 3. TEKRAR YAKALAMA İSTİSMARI ENGELLEYİCİ
   Future<bool> catchPokemon(int pokeId) async {
     if (!_caughtPokemonIds.contains(pokeId)) {
       _caughtPokemonIds.add(pokeId);
@@ -188,9 +191,9 @@ class TrainerProvider extends ChangeNotifier {
         _caughtPokemonIds.map((e) => e.toString()).toList(),
       );
       notifyListeners();
-      return true; // Yeni keşif
+      return true; // Sadece ilk yakalamada True döner
     }
-    return false; // Zaten koleksiyonda var
+    return false; // Zaten koleksiyonda var, XP veya Görev ilerlemesi verilmez
   }
 
   void claimDailyBonus() async {
@@ -216,7 +219,7 @@ class TrainerProvider extends ChangeNotifier {
       if (diff == 1) {
         _streak++;
       } else if (diff > 1) {
-        _streak = 1; // Dün girmediyse seri 1'den başlar
+        _streak = 1; 
       }
     }
     

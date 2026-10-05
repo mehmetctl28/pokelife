@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
+import 'package:pokelife/core/providers/quest_provider.dart';
 import 'package:pokelife/features/walk/walk_screen.dart';
 import 'package:pokelife/features/journal/journal_screen.dart';
 import 'package:pokelife/features/quests/quest_screen.dart';
@@ -33,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Widget _buildHomePage(TrainerProvider trainer) {
+  Widget _buildHomePage(TrainerProvider trainer, QuestProvider questProvider) {
     final hour = DateTime.now().hour;
     final isNight = hour < 6 || hour > 18;
     final timeString = "${hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}";
@@ -42,6 +43,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final groundColor = isNight ? const Color(0xFF2A5934) : const Color(0xFF52A55C);
     final skyIcon = isNight ? '🌙' : '☀️';
 
+    // Dinamik Partner: Pokedex'teki ilk Pokémon, yoksa Bulbasaur (1)
+    final int partnerId = trainer.caughtPokemonIds.isNotEmpty ? trainer.caughtPokemonIds.first : 1;
+    
+    // Dinamik Görev: Tamamlanmamış ilk görevi bul, yoksa en son görevi göster
+    String questTitle = "All Caught Up!";
+    double questProgress = 1.0;
+    String questProgressText = "100%";
+    
+    if (questProvider.dailyQuests.isNotEmpty) {
+      final activeQuest = questProvider.dailyQuests.firstWhere(
+        (q) => !q.isClaimed, 
+        orElse: () => questProvider.dailyQuests.last
+      );
+      questTitle = activeQuest.title;
+      questProgress = (activeQuest.progress / activeQuest.target).clamp(0.0, 1.0);
+      questProgressText = "${(questProgress * 100).toInt()}%";
+    }
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(20),
@@ -49,7 +68,8 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('DAY 1', style: TextStyle(color: AppColors.cream, fontSize: 12)),
+              // Day yazısı artık oyuncunun oyuna giriş serisine bağlı
+              Text('DAY ${trainer.streak > 0 ? trainer.streak : 1}', style: const TextStyle(color: AppColors.cream, fontSize: 12)),
               Text('$timeString $skyIcon', style: const TextStyle(color: AppColors.yellow, fontSize: 12)),
             ],
           ),
@@ -89,7 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Opacity(opacity: _showHeart ? 1.0 : 0.0, child: const Text('❤️', style: TextStyle(fontSize: 18))),
                         const SizedBox(height: 4),
-                        Image.network('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/diamond-pearl/1.png', height: 100, fit: BoxFit.contain, filterQuality: FilterQuality.none),
+                        // Sabit Bulbasaur yerine gerçek partner görseli
+                        Image.network('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/diamond-pearl/$partnerId.png', height: 100, fit: BoxFit.contain, filterQuality: FilterQuality.none),
                       ],
                     ),
                   ),
@@ -99,8 +120,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(color: AppColors.darkBlue.withOpacity(0.8), border: Border.all(color: AppColors.cream, width: 1), borderRadius: BorderRadius.circular(4)),
-                        child: Text('BULBASAUR  Lv. ${trainer.level}', style: const TextStyle(color: AppColors.cream, fontSize: 9)),
+                        decoration: BoxDecoration(color: AppColors.darkBlue.withValues(alpha: 0.8), border: Border.all(color: AppColors.cream, width: 1), borderRadius: BorderRadius.circular(4)),
+                        child: Text('PARTNER  Lv. ${trainer.level}', style: const TextStyle(color: AppColors.cream, fontSize: 9)),
                       ),
                     ),
                   ),
@@ -111,7 +132,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 16),
           
-          // XP ÇUBUĞU (Artık dinamik hedefe göre doluyor)
           Row(
             children: [
               const Text('XP', style: TextStyle(color: AppColors.yellow, fontSize: 10)),
@@ -121,7 +141,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 12,
                   decoration: BoxDecoration(border: Border.all(color: AppColors.cream, width: 2)),
                   child: LinearProgressIndicator(
-                    // currentLevelXp'yi nextLevelXp'ye bölüyoruz (örn: 20 / 200)
                     value: trainer.currentLevelXp / trainer.nextLevelXp, 
                     backgroundColor: AppColors.navy,
                     valueColor: const AlwaysStoppedAnimation<Color>(AppColors.green),
@@ -129,7 +148,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              // Sağdaki yazıyı da dinamik yaptık (örn: 20/200)
               Text('${trainer.currentLevelXp}/${trainer.nextLevelXp}', style: const TextStyle(color: AppColors.blue, fontSize: 8)),
             ],
           ),
@@ -142,15 +160,16 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(children: [Icon(Icons.flag, color: AppColors.yellow, size: 14), SizedBox(width: 8), Text('CURRENT QUEST', style: TextStyle(color: AppColors.yellow, fontSize: 10))]),
+                const Row(children: [Icon(Icons.flag, color: AppColors.yellow, size: 14), SizedBox(width: 8), Text('ACTIVE QUEST', style: TextStyle(color: AppColors.yellow, fontSize: 10))]),
                 const SizedBox(height: 12),
-                const Text('The Lost Pokéball', style: TextStyle(color: AppColors.cream, fontSize: 10)),
+                // Sabit görev yerine QuestProvider'dan gelen gerçek anlık görev
+                Text(questTitle, style: const TextStyle(color: AppColors.cream, fontSize: 10)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(child: LinearProgressIndicator(value: 0.72, minHeight: 6, backgroundColor: AppColors.navy, valueColor: const AlwaysStoppedAnimation<Color>(AppColors.yellow))),
+                    Expanded(child: LinearProgressIndicator(value: questProgress, minHeight: 6, backgroundColor: AppColors.navy, valueColor: const AlwaysStoppedAnimation<Color>(AppColors.yellow))),
                     const SizedBox(width: 12),
-                    const Text('72%', style: TextStyle(color: AppColors.blue, fontSize: 8)),
+                    Text(questProgressText, style: const TextStyle(color: AppColors.blue, fontSize: 8)),
                   ],
                 ),
               ],
@@ -188,17 +207,33 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPlaceholder(String title) => Center(child: Text(title, style: const TextStyle(color: AppColors.cream, fontSize: 20)));
-
   @override
   Widget build(BuildContext context) {
     final trainer = context.watch<TrainerProvider>();
+    final questProvider = context.watch<QuestProvider>(); 
+
+    // YENİ: Veriler henüz hafızadan okunmadıysa Yükleniyor ekranı göster
+    if (!trainer.isInitialized) {
+      return const Scaffold(
+        backgroundColor: AppColors.darkBlue,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('LOADING...', style: TextStyle(color: AppColors.yellow, fontSize: 16, letterSpacing: 2)),
+              SizedBox(height: 20),
+              CircularProgressIndicator(color: AppColors.green),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _buildHomePage(trainer),
+          _buildHomePage(trainer, questProvider),
           const WalkScreen(),
           const JournalScreen(),
           const QuestScreen(),
@@ -207,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: AppColors.darkBlue,
-        indicatorColor: AppColors.purple.withOpacity(0.4),
+        indicatorColor: AppColors.purple.withValues(alpha: 0.4), 
         selectedIndex: _selectedIndex,
         onDestinationSelected: (i) => setState(() => _selectedIndex = i),
         destinations: const [
