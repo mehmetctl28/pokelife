@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pokelife/core/models/quest.dart';
+import 'package:pokelife/core/providers/trainer_provider.dart';
 
 class QuestProvider extends ChangeNotifier {
   List<Quest> _dailyQuests = [];
@@ -75,12 +76,20 @@ class QuestProvider extends ChangeNotifier {
     }
   }
 
-  bool claimReward(String questId) {
+  // YENİ: TrainerProvider'ı içeri alıyoruz. İşlemler artık kilitli ve tek seferlik!
+  bool claimReward(String questId, TrainerProvider trainer) {
     final questIndex = _dailyQuests.indexWhere((q) => q.id == questId);
     if (questIndex != -1) {
       final q = _dailyQuests[questIndex];
+      // Eğer görev bittiyse ve henüz alınmadıysa işlemi başlat
       if (q.progress >= q.target && !q.isClaimed) {
-        q.isClaimed = true;
+        // 1. Önce kilitliyoruz (Double-tap hilesini engeller)
+        q.isClaimed = true; 
+        
+        // 2. XP'yi Trainer'a aktarıyoruz
+        trainer.addXp(q.rewardXp);
+        
+        // 3. Görevin alındığını diske kaydediyoruz
         _saveQuests();
         notifyListeners();
         return true;

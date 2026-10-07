@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:math';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
 import 'package:pokelife/core/providers/quest_provider.dart';
-import 'package:pokelife/features/walk/map_screen.dart';
+import 'package:pokelife/core/data/world_data.dart';
+import 'package:pokelife/core/models/region.dart';
+import 'package:pokelife/core/widgets/pokemon_sprite.dart';
+import 'package:pokelife/core/constants/game_constants.dart'; // YENİ: Sabitler
 
 class WalkScreen extends StatefulWidget {
   const WalkScreen({super.key});
@@ -23,7 +25,6 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
   String _status = 'STOPPED';
   bool isSearching = false;
   bool _permissionGranted = false;
-  String _currentArea = 'Whispering Forest';
 
   @override
   void initState() {
@@ -58,7 +59,6 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
 
   void _initPedometer() {
     _stopPedometer();
-
     _pedestrianStatusStreamSubscription = Pedometer.pedestrianStatusStream
         .listen(onPedestrianStatusChanged, onError: (e) {});
         
@@ -71,47 +71,28 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
     _pedestrianStatusStreamSubscription?.cancel();
   }
 
-  void onStepCount(StepCount event) {
-    if (mounted) {
-      context.read<TrainerProvider>().processHardwareStep(event.steps);
-
-      int currentDaily = context.read<TrainerProvider>().dailySteps;
-      context.read<QuestProvider>().updateStepProgress(currentDaily);
-    }
+  void onStepCount(StepCount event) async {
+    if (!mounted) return;
+    
+    final trainer = context.read<TrainerProvider>();
+    final questProv = context.read<QuestProvider>();
+    
+    await trainer.processHardwareStep(event.steps, questProv);
   }
 
   void onPedestrianStatusChanged(PedestrianStatus event) {
     if (mounted) setState(() => _status = event.status);
   }
 
-  int _getEncounterId(bool isRare) {
-    final hour = DateTime.now().hour;
-    final random = Random();
-    List<int> pool;
-
-    if (isRare) {
-      pool = [133, 147, 143, 131, 149]; 
-    } else if (_currentArea == 'Azure Lake') {
-      pool = [7, 54, 60, 118]; 
-    } else if (_currentArea == 'Rocky Cave') {
-      pool = [74, 41, 95]; 
-    } else {
-      if (hour < 6 || hour >= 20) {
-        pool = [41, 92, 35, 197]; 
-      } else if (hour >= 6 && hour < 11) {
-        pool = [16, 69, 10, 43]; 
-      } else {
-        pool = [25, 1, 10, 16]; 
-      }
-    }
-    return pool[random.nextInt(pool.length)];
-  }
-
-  void _triggerEncounter(bool isRare) {
+  void _triggerEncounter(bool isRare, Region currentRegion) {
     setState(() => isSearching = true);
+    
     Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) setState(() => isSearching = false);
-      final pokeId = _getEncounterId(isRare); 
+      if (!mounted) return;
+      setState(() => isSearching = false);
+      
+      final trainerSteps = context.read<TrainerProvider>().steps;
+      final pokeId = WorldData.getRandomEncounter(trainerSteps); 
       _showEncounterDialog(pokeId, isRare);
     });
   }
@@ -132,7 +113,7 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                 style: TextStyle(color: isRare ? AppColors.purple : AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold), 
                 textAlign: TextAlign.center),
               const SizedBox(height: 20),
-              Image.network('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/diamond-pearl/$pokeId.png', height: 100, fit: BoxFit.contain, filterQuality: FilterQuality.none),
+              PokemonSprite(pokemonId: pokeId, size: 100),
               const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -148,11 +129,7 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                   GestureDetector(
                     onTap: () async {
                       Navigator.pop(context);
-                      
-                      // Asenkron işlem başlıyor
                       bool isNew = await context.read<TrainerProvider>().catchPokemon(pokeId);
-                      
-                      // Analyze uyarısı çözümü: Asenkron işlemden sonra widget'ın hâlâ ekranda olduğunu doğruluyoruz
                       if (!context.mounted) return;
                       
                       int xpGained = isNew ? (isRare ? 50 : 20) : 10;
@@ -186,13 +163,17 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final trainer = context.watch<TrainerProvider>();
-    final steps = trainer.dailySteps;
+    final dailySteps = trainer.dailySteps;
+    final totalSteps = trainer.steps;
+    
+    final currentRegion = WorldData.getCurrentRegion(totalSteps);
     
     final bool isCamping = _status == 'stopped';
-    final bool canGetXp = steps >= 1000;         
-    final bool isLakeUnlocked = steps >= 3000;    
-    final bool canSearchNormal = steps >= 5000;   
-    final bool canSearchRare = steps >= 10000;    
+    
+    // SABİTLER KULLANILDI: Tutarsızlık riski tamamen ortadan kalktı
+    final bool canGetXp = dailySteps >= GameConstants.dailyXpGoal;         
+    final bool canSearchNormal = dailySteps >= GameConstants.dailyWildGoal;   
+    final bool canSearchRare = dailySteps >= GameConstants.dailyRareGoal;    
 
     return SafeArea(
       child: ListView(
@@ -201,43 +182,12 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Flexible(child: Text('WORLD MAP', style: TextStyle(color: AppColors.cream, fontSize: 14))),
-              GestureDetector(
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => MapScreen(
-                      onAreaSelected: (area) {
-                        setState(() => _currentArea = area);
-                      },
-                    ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: AppColors.yellow, width: 1)),
-                  child: const Text('🗺️ OPEN MAP', style: TextStyle(color: AppColors.yellow, fontSize: 8, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          if (!_permissionGranted)
-            Container(
-              padding: const EdgeInsets.all(16), margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: Colors.redAccent, width: 2)),
-              child: const Text('MOTION PERMISSION REQUIRED TO TRACK STEPS.', style: TextStyle(color: AppColors.yellow, fontSize: 9)),
-            ),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
               Text(isCamping ? '🏕️ CAMP RESTING' : '📍 ACTIVE AREA', style: TextStyle(color: isCamping ? Colors.orangeAccent : AppColors.yellow, fontSize: 10)),
               Text('STATUS: ${_status.toUpperCase()}', style: TextStyle(color: _status == 'walking' ? AppColors.green : AppColors.blue, fontSize: 8)),
             ],
           ),
           const SizedBox(height: 8),
+          
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: isCamping ? Colors.orangeAccent : AppColors.cream, width: 2)),
@@ -246,33 +196,42 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center, 
                   children: [
-                    Text(isCamping ? '🔥' : (_currentArea == 'Azure Lake' ? '🌊' : (_currentArea == 'Rocky Cave' ? '⛰️' : '🌲')), style: const TextStyle(fontSize: 24)), 
+                    Text(isCamping ? '🔥' : '🌍', style: const TextStyle(fontSize: 24)), 
                     const SizedBox(width: 12), 
-                    Flexible(child: Text(isCamping ? 'RESTING AT CAMP (Idle)' : _currentArea.toUpperCase(), style: const TextStyle(color: AppColors.cream, fontSize: 11), overflow: TextOverflow.ellipsis))
+                    Flexible(
+                      child: Text(isCamping ? 'RESTING AT CAMP (Idle)' : currentRegion.name, 
+                        style: const TextStyle(color: AppColors.cream, fontSize: 11), overflow: TextOverflow.ellipsis
+                      )
+                    )
                   ]
                 ),
                 const SizedBox(height: 12),
-                const Text('Explore different biomes by unlocking map nodes.', style: TextStyle(color: AppColors.blue, fontSize: 8), textAlign: TextAlign.center),
+                const Text('Walk to explore and encounter Pokémon.', style: TextStyle(color: AppColors.blue, fontSize: 8), textAlign: TextAlign.center),
               ],
             ),
           ),
           
           const SizedBox(height: 20),
 
-          const Text('MILESTONE GOALS (TODAY)', style: TextStyle(color: AppColors.yellow, fontSize: 10)),
+          if (!_permissionGranted)
+            Container(
+              padding: const EdgeInsets.all(16), margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: Colors.redAccent, width: 2)),
+              child: const Text('MOTION PERMISSION REQUIRED TO TRACK STEPS.', style: TextStyle(color: AppColors.yellow, fontSize: 9)),
+            ),
+
+          const Text('DAILY ACTION GOALS', style: TextStyle(color: AppColors.yellow, fontSize: 10)),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: AppColors.blue, width: 2)),
             child: Column(
               children: [
-                _buildMilestoneRow('1,000 Steps (XP)', canGetXp, canGetXp ? "UNLOCKED" : "${1000 - steps}L", 'Every 1,000 steps helps generate experience points for your partner.', context),
+                _buildMilestoneRow('1,000 Steps (XP)', canGetXp, canGetXp ? "READY!" : "${GameConstants.dailyXpGoal - dailySteps}L", 'Every 1,000 steps helps generate experience points for your partner.', context),
                 const Divider(color: AppColors.darkBlue, height: 16),
-                _buildMilestoneRow('3,000 Steps (Lake Map)', isLakeUnlocked, isLakeUnlocked ? "UNLOCKED" : "${3000 - steps}L", 'Unlocks the Azure Lake biome on your world map.', context),
+                _buildMilestoneRow('5,000 Steps (Wild)', canSearchNormal, canSearchNormal ? "READY!" : "${GameConstants.dailyWildGoal - dailySteps}L", 'Allows you to search current area for wild Pokémon encounters.', context),
                 const Divider(color: AppColors.darkBlue, height: 16),
-                _buildMilestoneRow('5,000 Steps (Wild)', canSearchNormal, canSearchNormal ? "READY!" : "${5000 - steps}L", 'Allows you to search current area for wild Pokémon encounters.', context),
-                const Divider(color: AppColors.darkBlue, height: 16),
-                _buildMilestoneRow('10,000 Steps (Rare)', canSearchRare, canSearchRare ? "READY!" : "${10000 - steps}L", 'Unlocks deep exploration for rare and legendary Pokémon.', context),
+                _buildMilestoneRow('10,000 Steps (Rare)', canSearchRare, canSearchRare ? "READY!" : "${GameConstants.dailyRareGoal - dailySteps}L", 'Unlocks deep exploration for rare and legendary Pokémon.', context),
               ],
             ),
           ),
@@ -281,16 +240,16 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
 
           if (canSearchNormal) ...[
             GestureDetector(
-              onTap: isSearching ? null : () => _triggerEncounter(false),
-              child: Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.green, width: 2)), child: Center(child: Text(isSearching ? 'SEARCHING...' : '🔍 SEARCH AREA (5k Reached)', style: const TextStyle(color: AppColors.green, fontSize: 10)))),
+              onTap: isSearching ? null : () => _triggerEncounter(false, currentRegion),
+              child: Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.green, width: 2)), child: Center(child: Text(isSearching ? 'SEARCHING...' : '🔍 SEARCH AREA', style: const TextStyle(color: AppColors.green, fontSize: 10)))),
             ),
             const SizedBox(height: 12),
           ],
 
           if (canSearchRare) ...[
             GestureDetector(
-              onTap: isSearching ? null : () => _triggerEncounter(true),
-              child: Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.purple, width: 2)), child: Center(child: Text(isSearching ? 'SEARCHING...' : '✨ SEARCH DEEP AREA (10k Rare)', style: const TextStyle(color: AppColors.purple, fontSize: 10, fontWeight: FontWeight.bold)))),
+              onTap: isSearching ? null : () => _triggerEncounter(true, currentRegion),
+              child: Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.purple, width: 2)), child: Center(child: Text(isSearching ? 'SEARCHING...' : '✨ SEARCH DEEP AREA', style: const TextStyle(color: AppColors.purple, fontSize: 10, fontWeight: FontWeight.bold)))),
             ),
             const SizedBox(height: 12),
           ],
@@ -304,7 +263,7 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 LinearProgressIndicator(
-                  value: (steps / 10000).clamp(0.0, 1.0), 
+                  value: (dailySteps / GameConstants.dailyRareGoal).clamp(0.0, 1.0), 
                   minHeight: 10, 
                   backgroundColor: AppColors.navy, 
                   valueColor: const AlwaysStoppedAnimation<Color>(AppColors.green)
@@ -313,8 +272,8 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('$steps / 10,000 STEPS', style: const TextStyle(color: AppColors.cream, fontSize: 8)),
-                    Text('${(steps / 250).floor()} XP earned', style: const TextStyle(color: AppColors.yellow, fontSize: 8)),
+                    Text('$dailySteps / ${GameConstants.dailyRareGoal} STEPS', style: const TextStyle(color: AppColors.cream, fontSize: 8)),
+                    Text('${(dailySteps / 250).floor()} XP earned', style: const TextStyle(color: AppColors.yellow, fontSize: 8)),
                   ],
                 ),
               ],

@@ -83,11 +83,9 @@ class QuestScreen extends StatelessWidget {
                               const Text('CLAIMED ✓', style: TextStyle(color: AppColors.blue, fontSize: 8, fontWeight: FontWeight.bold))
                             else if (isCompleted)
                               GestureDetector(
-                                onTap: () {
-                                  if (questProvider.claimReward(quest.id)) {
-                                    trainerProvider.addXp(quest.rewardXp);
-                                  }
-                                },
+                               onTap: () {
+                                questProvider.claimReward(quest.id, trainerProvider);
+                               },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(color: AppColors.green, border: Border.all(color: AppColors.green, width: 1)),

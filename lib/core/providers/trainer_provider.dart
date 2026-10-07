@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pokelife/core/providers/quest_provider.dart';
+import 'package:pokelife/core/data/world_data.dart';
+import 'package:pokelife/core/data/evolution_data.dart'; // YENİ: Evrim veritabanı
 
 class TrainerProvider extends ChangeNotifier {
   int _xp = 35;
   int _steps = 0;
   int _dailySteps = 0;
-  String _lastBonusDate = "";
   int _streak = 0;
   String _lastStreakDate = "";
   String _lastStepDate = "";
+  
+  // O anki tarihi anlık takip eden değişken
+  String _lastActiveDate = DateTime.now().toIso8601String().split('T')[0];
   
   List<int> _caughtPokemonIds = [];
   bool _isInitialized = false;
   int _lastSystemStep = 0;
   int _partnerId = 1;
-
-  // YENİ: En iyi günlük adım rekoru
   int _bestDailySteps = 0;
+  
+  List<String> _unlockedAchievements = [];
 
   int get xp => _xp;
   int get steps => _steps;
@@ -25,17 +30,8 @@ class TrainerProvider extends ChangeNotifier {
   List<int> get caughtPokemonIds => _caughtPokemonIds;
   bool get isInitialized => _isInitialized;
   int get partnerId => _partnerId;
-  
-  // YENİ: Rekoru dışarı açıyoruz
   int get bestDailySteps => _bestDailySteps;
-  
-  // YENİ: Açılan bölge sayısını toplam adıma göre dinamik hesaplayan getter
-  int get unlockedRegions {
-    if (_steps >= 10000) return 4;
-    if (_steps >= 5000) return 3;
-    if (_steps >= 3000) return 2;
-    return 1;
-  }
+  List<String> get unlockedAchievements => _unlockedAchievements;
 
   int get level {
     int l = 1;
@@ -69,11 +65,6 @@ class TrainerProvider extends ChangeNotifier {
 
   int get nextLevelXp => level * 100; 
 
-  bool get isBonusClaimedToday {
-    final today = DateTime.now().toIso8601String().split('T')[0];
-    return _lastBonusDate == today;
-  }
-
   TrainerProvider() {
     _loadData();
   }
@@ -83,15 +74,13 @@ class TrainerProvider extends ChangeNotifier {
     _xp = prefs.getInt('trainer_xp') ?? 35;
     _steps = prefs.getInt('trainer_steps') ?? 0;
     _dailySteps = prefs.getInt('trainer_daily_steps') ?? 0;
-    _lastBonusDate = prefs.getString('last_bonus_date') ?? "";
     _streak = prefs.getInt('trainer_streak') ?? 0;
     _lastStreakDate = prefs.getString('last_streak_date') ?? "";
     _lastStepDate = prefs.getString('last_step_date') ?? "";
     _lastSystemStep = prefs.getInt('last_system_step') ?? 0;
     _partnerId = prefs.getInt('partner_id') ?? 1;
-    
-    // YENİ: Rekoru diskten oku
     _bestDailySteps = prefs.getInt('best_daily_steps') ?? 0;
+    _lastActiveDate = prefs.getString('trainer_last_active_date') ?? DateTime.now().toIso8601String().split('T')[0];
     
     final List<String>? savedList = prefs.getStringList('caught_pokemons');
     if (savedList != null) {
@@ -99,8 +88,13 @@ class TrainerProvider extends ChangeNotifier {
     } else {
       _caughtPokemonIds = [1];
     }
+
+    final List<String>? savedAchievements = prefs.getStringList('unlocked_achievements');
+    if (savedAchievements != null) {
+      _unlockedAchievements = savedAchievements;
+    }
     
-    _handleDateChanges(prefs);
+    _handleDateChanges(prefs, null); 
     _isInitialized = true;
     notifyListeners();
   }
@@ -114,11 +108,12 @@ class TrainerProvider extends ChangeNotifier {
     }
   }
 
-  bool _handleDateChanges(SharedPreferences prefs) {
+  bool _handleDateChanges(SharedPreferences prefs, QuestProvider? questProv) {
     final today = DateTime.now();
     final todayStr = today.toIso8601String().split('T')[0];
     bool isNewDay = false;
 
+    // Adım tarihine göre kontrol
     if (_lastStepDate.isNotEmpty && _lastStepDate != todayStr) {
       _dailySteps = 0; 
       _lastStepDate = todayStr;
@@ -130,6 +125,17 @@ class TrainerProvider extends ChangeNotifier {
       prefs.setString('last_step_date', todayStr);
     }
 
+    // Uygulama gece yarısı açık kaldıysa, görevleri ZORLA resetle!
+    if (_lastActiveDate != todayStr) {
+      _lastActiveDate = todayStr;
+      prefs.setString('trainer_last_active_date', todayStr);
+      if (questProv != null) {
+        questProv.forceResetQuestsForNewDay();
+      }
+      isNewDay = true;
+    }
+
+    // Streak kontrolü
     if (_lastStreakDate.isNotEmpty) {
       final lastDate = DateTime.parse(_lastStreakDate);
       final diff = DateTime(today.year, today.month, today.day)
@@ -141,17 +147,19 @@ class TrainerProvider extends ChangeNotifier {
         prefs.setInt('trainer_streak', 0);
       }
     }
+    
     return isNewDay;
   }
 
-  void processHardwareStep(int hardwareStep) async {
+  Future<void> processHardwareStep(int hardwareStep, QuestProvider questProv) async {
     final prefs = await SharedPreferences.getInstance();
     
-    bool dateChanged = _handleDateChanges(prefs);
+    bool dateChanged = _handleDateChanges(prefs, questProv);
 
     if (_lastSystemStep == 0) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
+      questProv.updateStepProgress(_dailySteps); 
       if (dateChanged) notifyListeners(); 
       return;
     }
@@ -159,6 +167,7 @@ class TrainerProvider extends ChangeNotifier {
     if (hardwareStep < _lastSystemStep) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
+      questProv.updateStepProgress(_dailySteps); 
       if (dateChanged) notifyListeners();
       return;
     }
@@ -167,23 +176,22 @@ class TrainerProvider extends ChangeNotifier {
     if (delta > 0) {
       _lastSystemStep = hardwareStep;
       await prefs.setInt('last_system_step', _lastSystemStep);
-      addSteps(delta); 
+      await addSteps(delta, questProv); 
     } else if (dateChanged) {
       notifyListeners();
     }
   }
 
-  void addSteps(int delta) async {
+  Future<void> addSteps(int delta, QuestProvider questProv) async {
     if (delta <= 0) return;
     
     final prefs = await SharedPreferences.getInstance();
-    _handleDateChanges(prefs); 
+    _handleDateChanges(prefs, questProv); 
 
     int oldDaily = _dailySteps;
     _steps += delta;
     _dailySteps += delta;
     
-    // YENİ: Rekor kırıldıysa kaydet!
     if (_dailySteps > _bestDailySteps) {
       _bestDailySteps = _dailySteps;
       await prefs.setInt('best_daily_steps', _bestDailySteps);
@@ -196,8 +204,22 @@ class TrainerProvider extends ChangeNotifier {
       await prefs.setInt('trainer_xp', _xp);
     }
 
+    if (oldDaily < 1000 && _dailySteps >= 1000) {
+      _streak += 1;
+      final todayStr = DateTime.now().toIso8601String().split('T')[0];
+      _lastStreakDate = todayStr;
+      
+      await prefs.setInt('trainer_streak', _streak);
+      await prefs.setString('last_streak_date', _lastStreakDate);
+    }
+
     await prefs.setInt('trainer_steps', _steps);
     await prefs.setInt('trainer_daily_steps', _dailySteps);
+    
+    questProv.updateStepProgress(_dailySteps);
+    
+    checkAchievements();
+    checkEvolution(); // YENİ: XP artınca evrim kontrolü yap
     notifyListeners();
   }
 
@@ -205,6 +227,9 @@ class TrainerProvider extends ChangeNotifier {
     _xp += amount;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('trainer_xp', _xp);
+    
+    checkAchievements();
+    checkEvolution(); // YENİ: XP artınca evrim kontrolü yap
     notifyListeners();
   }
 
@@ -218,45 +243,72 @@ class TrainerProvider extends ChangeNotifier {
         'caught_pokemons', 
         _caughtPokemonIds.map((e) => e.toString()).toList(),
       );
+      
+      checkAchievements();
       notifyListeners();
       return true; 
     }
     return false; 
   }
 
-  void claimDailyBonus() async {
-    if (isBonusClaimedToday) return;
-    
+  void checkAchievements() async {
+    bool newlyUnlocked = false;
     final prefs = await SharedPreferences.getInstance();
-    _handleDateChanges(prefs); 
-    
-    final today = DateTime.now();
-    final todayStr = today.toIso8601String().split('T')[0];
-    
-    _lastBonusDate = todayStr;
-    _xp += 15; 
-    
-    if (_lastStreakDate.isEmpty) {
-      _streak = 1;
-    } else {
-      final lastDate = DateTime.parse(_lastStreakDate);
-      final diff = DateTime(today.year, today.month, today.day)
-          .difference(DateTime(lastDate.year, lastDate.month, lastDate.day))
-          .inDays;
-      
-      if (diff == 1) {
-        _streak++;
-      } else if (diff > 1) {
-        _streak = 1; 
+
+    void unlock(String id, int xp) {
+      if (!_unlockedAchievements.contains(id)) {
+        _unlockedAchievements.add(id);
+        _xp += xp; 
+        newlyUnlocked = true;
       }
     }
+
+    if (_steps >= 1000) unlock('first_steps', 50);
+    if (_caughtPokemonIds.length >= 1) unlock('first_catch', 50);
+    if (_streak >= 7) unlock('getting_serious', 100);
+    if (_bestDailySteps >= 10000) unlock('long_walker', 100);
+    if (_caughtPokemonIds.length >= 25) unlock('collector', 150);
     
-    _lastStreakDate = todayStr;
-    
-    await prefs.setString('last_bonus_date', todayStr);
-    await prefs.setString('last_streak_date', todayStr);
-    await prefs.setInt('trainer_xp', _xp);
-    await prefs.setInt('trainer_streak', _streak);
-    notifyListeners();
+    int unlockedRegions = WorldData.regions.where((r) => _steps >= r.unlockSteps).length;
+    if (unlockedRegions >= 3) unlock('explorer', 100);
+
+    if (newlyUnlocked) {
+      await prefs.setStringList('unlocked_achievements', _unlockedAchievements);
+      await prefs.setInt('trainer_xp', _xp);
+      checkEvolution(); // YENİ: Başarımdan gelen XP evrim tetikleyebilir
+      notifyListeners();
+    }
+  }
+
+  // YENİ: EVRİM MOTORU
+  void checkEvolution() async {
+    final currentLevel = this.level; 
+    final evolutionRules = EvolutionData.evolutions[_partnerId];
+
+    if (evolutionRules != null) {
+      for (var requiredLevel in evolutionRules.keys) {
+        if (currentLevel >= requiredLevel) {
+          
+          int nextEvolutionId = evolutionRules[requiredLevel]!;
+          
+          // Partner henüz evrimleşmemişse evrimi gerçekleştir
+          if (_partnerId != nextEvolutionId) {
+            _partnerId = nextEvolutionId;
+            
+            if (!_caughtPokemonIds.contains(_partnerId)) {
+              _caughtPokemonIds.add(_partnerId);
+              _caughtPokemonIds.sort();
+            }
+            
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt('partner_id', _partnerId);
+            await prefs.setStringList('caught_pokemons', _caughtPokemonIds.map((e) => e.toString()).toList());
+            
+            notifyListeners();
+            break; 
+          }
+        }
+      }
+    }
   }
 }

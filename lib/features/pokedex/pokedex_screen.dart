@@ -2,19 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
+import 'package:pokelife/core/widgets/pokemon_sprite.dart';
 
 class PokedexScreen extends StatelessWidget {
   const PokedexScreen({super.key});
 
-  static const Map<int, String> pokemonNames = {
-    1: 'BULBASAUR', 2: 'IVYSAUR', 3: 'VENUSAUR', 4: 'CHARMANDER', 5: 'CHARMELEON', 6: 'CHARIZARD',
-    7: 'SQUIRTLE', 8: 'WARTORTLE', 9: 'BLASTOISE', 10: 'CATERPIE', 16: 'PIDGEY', 25: 'PIKACHU',
-    35: 'CLEFAIRY', 41: 'ZUBAT', 43: 'ODDISH', 54: 'PSYDUCK', 60: 'POLIWAG', 69: 'BELLSPROUT',
-    74: 'GEODUDE', 92: 'GASTLY', 95: 'ONIX', 118: 'GOLDEEN', 131: 'LAPRAS', 133: 'EEVEE',
-    143: 'SNORLAX', 147: 'DRATINI', 149: 'DRAGONITE', 151: 'MEW'
-  };
-
-  // Dinamik Tür Bulucu
   String _getPokeType(int id) {
     if ([1, 2, 3, 43, 69].contains(id)) return 'GRASS / POISON';
     if ([4, 5, 6].contains(id)) return 'FIRE';
@@ -23,17 +15,19 @@ class PokedexScreen extends StatelessWidget {
     if ([74, 95].contains(id)) return 'ROCK / GROUND';
     if ([147, 149].contains(id)) return 'DRAGON';
     if ([92].contains(id)) return 'GHOST / POISON';
-    return 'NORMAL'; // Eevee, Snorlax vb.
+    return 'NORMAL'; 
   }
+
+  String _getPokemonName(int id) => 'Pokemon #$id';
 
   @override
   Widget build(BuildContext context) {
     final trainer = context.watch<TrainerProvider>();
     final caughtIds = trainer.caughtPokemonIds;
     
-    // YENİ: Artık sabit ilk pokemon değil, kullanıcının seçtiği partnerId okunuyor
     final partnerId = trainer.partnerId;
-    final partnerName = pokemonNames[partnerId] ?? 'UNKNOWN';
+    
+    final partnerName = _getPokemonName(partnerId);
 
     final int friendship = (trainer.streak).clamp(0, 5);
     String hearts = '♥️' * friendship + '♡' * (5 - friendship);
@@ -83,11 +77,7 @@ class PokedexScreen extends StatelessWidget {
                             color: AppColors.navy,
                             border: Border.all(color: AppColors.blue, width: 2),
                           ),
-                          child: Image.network(
-                            'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/diamond-pearl/$partnerId.png',
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.none,
-                          ),
+                          child: PokemonSprite(pokemonId: partnerId, size: 80),
                         ),
                         const SizedBox(width: 16),
                         
@@ -166,7 +156,9 @@ class PokedexScreen extends StatelessWidget {
                   
                   return GestureDetector(
                     onTap: () {
-                      if (isCaught) _showPokeDetails(context, pokeId, pokemonNames[pokeId] ?? 'UNKNOWN', isPartner);
+                      if (isCaught) {
+                        _showPokeDetails(context, pokeId, _getPokemonName(pokeId), isPartner);
+                      }
                     },
                     child: Container(
                       decoration: BoxDecoration(
@@ -223,17 +215,12 @@ class PokedexScreen extends StatelessWidget {
               Container(
                 width: 100, height: 100,
                 decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: AppColors.cream, width: 2)),
-                child: Image.network(
-                  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/diamond-pearl/$pokeId.png',
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.none,
-                ),
+                child: PokemonSprite(pokemonId: pokeId, size: 100),
               ),
               const SizedBox(height: 16),
               Text(name, style: const TextStyle(color: AppColors.cream, fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               
-              // Dinamik Tür Gösterimi
               Text('Type: ${_getPokeType(pokeId)} / STATUS: ${isPartner ? "PARTNER" : "IN BOX"}', style: const TextStyle(color: AppColors.blue, fontSize: 8)),
               const SizedBox(height: 20),
               
@@ -249,7 +236,6 @@ class PokedexScreen extends StatelessWidget {
                     ),
                   ),
                   
-                  // PARTNER YAP BUTONU (Sadece o anki partner değilse göster)
                   if (!isPartner)
                     GestureDetector(
                       onTap: () {

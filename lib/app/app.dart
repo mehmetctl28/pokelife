@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-// İçe aktarmaların KESİNLİKLE 'package:pokelife/...' ile başladığından emin ol!
 import 'package:pokelife/core/providers/trainer_provider.dart';
 import 'package:pokelife/core/providers/quest_provider.dart';
 import 'package:pokelife/core/theme/app_theme.dart';
@@ -14,7 +12,6 @@ class PokelifeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Türleri '<>' içinde açıkça belirterek Flutter'ın kafasının karışmasını engelliyoruz
         ChangeNotifierProvider<TrainerProvider>(create: (_) => TrainerProvider()),
         ChangeNotifierProvider<QuestProvider>(create: (_) => QuestProvider()),
       ],
