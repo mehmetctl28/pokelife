@@ -4,35 +4,82 @@ import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
 import 'package:pokelife/core/data/world_data.dart';
 import 'package:pokelife/core/data/achievement_data.dart';
+import 'package:pokelife/core/models/achievement.dart';
+import 'package:pokelife/core/widgets/kanto_town_map.dart';
 
 class JournalScreen extends StatelessWidget {
   const JournalScreen({super.key});
+
+  Map<String, dynamic> _getAchievementProgress(Achievement achievement, TrainerProvider trainer) {
+    int current = 0;
+
+    switch (achievement.id) {
+      case 'first_steps':
+        current = trainer.steps;
+        break;
+      case 'first_catch':
+        current = trainer.caughtPokemonIds.length;
+        break;
+      case 'getting_serious':
+        current = trainer.streak;
+        break;
+      case 'long_walker':
+        current = trainer.bestDailySteps;
+        break;
+      case 'collector':
+        current = trainer.caughtPokemonIds.length;
+        break;
+      case 'explorer':
+        current = WorldData.regions.where((r) => trainer.steps >= r.unlockSteps).length;
+        break;
+    }
+
+    final int target = achievement.target;
+    final double percent = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
+    return {'current': current, 'target': target, 'percent': percent};
+  }
 
   @override
   Widget build(BuildContext context) {
     final trainer = context.watch<TrainerProvider>();
     final totalRegions = WorldData.regions.length;
     final unlockedRegions = WorldData.regions.where((r) => trainer.steps >= r.unlockSteps).length;
+
     final lockedAchievements = AchievementData.achievements
         .where((a) => !trainer.unlockedAchievements.contains(a.id))
         .toList();
-    final nextMilestone = lockedAchievements.isNotEmpty ? lockedAchievements.first : null;
+
+    Achievement? nextMilestone;
+    if (lockedAchievements.isNotEmpty) {
+      lockedAchievements.sort((a, b) {
+        final double percentA = _getAchievementProgress(a, trainer)['percent'] as double;
+        final double percentB = _getAchievementProgress(b, trainer)['percent'] as double;
+        return percentB.compareTo(percentA);
+      });
+      nextMilestone = lockedAchievements.first;
+    }
 
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const Text('TRAINER JOURNAL', style: TextStyle(color: AppColors.cream, fontSize: 14)),
+          const Text('JOURNEY', style: TextStyle(color: AppColors.cream, fontSize: 14)),
           const SizedBox(height: 20),
-          
-          // --- 1. İSTATİSTİKLER (LIFETIME STATS) ---
-          const Text('LIFETIME STATS', style: TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          const Text(
+            'LIFETIME STATS',
+            style: TextStyle(
+              color: AppColors.yellow,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
+          ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.navy, 
-              border: Border.all(color: AppColors.blue, width: 2)
+              color: AppColors.navy,
+              border: Border.all(color: AppColors.blue, width: 2),
             ),
             child: Column(
               children: [
@@ -46,100 +93,151 @@ class JournalScreen extends StatelessWidget {
               ],
             ),
           ),
-          
           const SizedBox(height: 28),
-          const Text('NEXT MILESTONE', style: TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          const Text(
+            'NEXT MILESTONE',
+            style: TextStyle(
+              color: AppColors.yellow,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
+          ),
           const SizedBox(height: 12),
-          
-          if (nextMilestone != null)
+          if (nextMilestone != null) ...[
+            Builder(
+              builder: (context) {
+                final progressData = _getAchievementProgress(nextMilestone!, trainer);
+                final current = progressData['current'];
+                final target = progressData['target'];
+                final percent = progressData['percent'];
+
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkBlue,
+                    border: Border.all(color: AppColors.purple, width: 2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.star, color: AppColors.purple, size: 24),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  nextMilestone.title,
+                                  style: const TextStyle(
+                                    color: AppColors.cream,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  nextMilestone.description,
+                                  style: const TextStyle(color: AppColors.blue, fontSize: 9),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.purple.withValues(alpha: 0.2),
+                              border: Border.all(color: AppColors.purple, width: 1),
+                            ),
+                            child: Text(
+                              '+${nextMilestone.rewardXp} XP',
+                              style: const TextStyle(
+                                color: AppColors.purple,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(
+                        value: percent,
+                        minHeight: 8,
+                        backgroundColor: AppColors.navy,
+                        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.purple),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('PROGRESS', style: TextStyle(color: AppColors.blue, fontSize: 8)),
+                          Text(
+                            '$current / $target',
+                            style: const TextStyle(
+                              color: AppColors.cream,
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ] else ...[
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.purple, width: 2)),
-              child: Row(
-                children: [
-                  const Icon(Icons.star, color: AppColors.purple, size: 24),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(nextMilestone.title, style: const TextStyle(color: AppColors.cream, fontSize: 11, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text(nextMilestone.description, style: const TextStyle(color: AppColors.blue, fontSize: 9)),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: AppColors.purple.withValues(alpha: 0.2), border: Border.all(color: AppColors.purple, width: 1)),
-                    child: Text('+${nextMilestone.rewardXp} XP', style: const TextStyle(color: AppColors.purple, fontSize: 9, fontWeight: FontWeight.bold)),
-                  ),
-                ],
+              decoration: BoxDecoration(
+                color: AppColors.darkBlue,
+                border: Border.all(color: AppColors.green, width: 2),
               ),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: AppColors.darkBlue, border: Border.all(color: AppColors.green, width: 2)),
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.emoji_events, color: AppColors.green, size: 24),
                   SizedBox(width: 12),
-                  Text('ALL MILESTONES COMPLETED!', style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+                  Text(
+                    'ALL MILESTONES COMPLETED!',
+                    style: TextStyle(
+                      color: AppColors.green,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
-            
+          ],
           const SizedBox(height: 28),
-          const Text('WORLD MAP PROGRESS', style: TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: AppColors.navy, border: Border.all(color: AppColors.blue, width: 2)),
-            child: Column(
-              children: WorldData.regions.map((region) {
-                final bool isUnlocked = trainer.steps >= region.unlockSteps;
-                final bool isCurrent = WorldData.getCurrentRegion(trainer.steps).name == region.name;
-                
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isUnlocked ? Icons.lock_open : Icons.lock, 
-                        color: isCurrent ? AppColors.green : (isUnlocked ? AppColors.cream : AppColors.blue), 
-                        size: 16
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              region.name.toUpperCase(), 
-                              style: TextStyle(
-                                color: isCurrent ? AppColors.green : (isUnlocked ? AppColors.cream : AppColors.blue), 
-                                fontSize: 10, 
-                                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal
-                              )
-                            ),
-                            if (!isUnlocked)
-                              Text('Unlocks at ${region.unlockSteps} steps', style: const TextStyle(color: AppColors.blue, fontSize: 8)),
-                          ],
-                        ),
-                      ),
-                      if (isCurrent)
-                        const Text('CURRENT', style: TextStyle(color: AppColors.green, fontSize: 8, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                );
-              }).toList(),
+          const Text(
+            'WORLD MAP PROGRESS',
+            style: TextStyle(
+              color: AppColors.yellow,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
             ),
           ),
+          const SizedBox(height: 12),
+
+          // Tek ve Bütünleşik Kanto Town Map
+          const KantoTownMap(),
 
           const SizedBox(height: 28),
-          const Text('ACHIEVEMENTS', style: TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          const Text(
+            'ACHIEVEMENTS',
+            style: TextStyle(
+              color: AppColors.yellow,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
+          ),
           const SizedBox(height: 12),
           GridView.count(
             crossAxisCount: 2,
@@ -150,7 +248,7 @@ class JournalScreen extends StatelessWidget {
             childAspectRatio: 2.2,
             children: AchievementData.achievements.map((achievement) {
               final bool isUnlocked = trainer.unlockedAchievements.contains(achievement.id);
-              
+
               return Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -166,36 +264,39 @@ class JournalScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            achievement.title, 
+                            achievement.title,
                             style: TextStyle(
-                              color: isUnlocked ? AppColors.cream : AppColors.blue, 
-                              fontSize: 8, 
-                              fontWeight: FontWeight.bold
-                            ), 
-                            overflow: TextOverflow.ellipsis
-                          )
+                              color: isUnlocked ? AppColors.cream : AppColors.blue,
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         if (isUnlocked) const Icon(Icons.check_circle, color: AppColors.green, size: 12),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      achievement.description, 
-                      style: TextStyle(color: AppColors.blue, fontSize: 7)
+                      achievement.description,
+                      style: const TextStyle(color: AppColors.blue, fontSize: 7),
                     ),
                     if (!isUnlocked) ...[
                       const SizedBox(height: 4),
                       Text(
-                        '+${achievement.rewardXp} XP', 
-                        style: const TextStyle(color: AppColors.yellow, fontSize: 7, fontWeight: FontWeight.bold)
+                        '+${achievement.rewardXp} XP',
+                        style: const TextStyle(
+                          color: AppColors.yellow,
+                          fontSize: 7,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ]
+                    ],
                   ],
                 ),
               );
             }).toList(),
           ),
-          
           const SizedBox(height: 20),
         ],
       ),

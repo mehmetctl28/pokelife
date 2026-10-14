@@ -1,10 +1,10 @@
 class GameConstants {
-  // --- GÜNLÜK HEDEF EŞİKLERİ (WalkScreen için) ---
-  static const int dailyXpGoal = 1000;        // XP kazanmaya başlama sınırı
-  static const int dailyWildGoal = 5000;      // Vahşi Pokémon arama sınırı
-  static const int dailyRareGoal = 10000;     // Nadir Pokémon arama sınırı
+  // İlk günlük kilometre taşı ve streak eşiği
+  static const int dailyFirstMilestone = 1000;
 
-  // --- BÖLGE KİLİT AÇMA EŞİKLERİ (WorldData için) ---
+  static const int dailyWildGoal = 5000;
+  static const int dailyRareGoal = 10000;
+
   static const int regionRoute1Steps = 0;
   static const int regionViridianForestSteps = 5000;
   static const int regionMtMoonSteps = 15000;

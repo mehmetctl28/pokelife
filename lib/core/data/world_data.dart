@@ -1,47 +1,52 @@
-import '../models/region.dart';
-import '../constants/game_constants.dart'; // YENİ: Sabitleri içeri aktar
+import 'package:pokelife/core/models/region.dart';
 
 class WorldData {
-  static const List<Region> regions = [
-    Region(
+  static final List<Region> regions = [
+    const Region(
       id: 'route_1',
       name: 'Route 1',
-      unlockSteps: GameConstants.regionRoute1Steps, // Sabit kullanıldı
-      dayEncounters: [16, 19, 43], 
-      nightEncounters: [19, 41, 163], 
+      unlockSteps: 0,
+      normalPokemonIds: [1, 4, 7, 10, 13, 16, 19], // Bulbasaur, Charmander, Squirtle, Caterpie, Weedle, Pidgey, Rattata vb.
+      rarePokemonIds: [25, 35, 39], // Pikachu, Clefairy, Jigglypuff
+      minLevel: 3,
+      maxLevel: 7,
     ),
-    Region(
+    const Region(
       id: 'viridian_forest',
       name: 'Viridian Forest',
-      unlockSteps: GameConstants.regionViridianForestSteps, // Sabit kullanıldı
-      dayEncounters: [10, 13, 25], 
-      nightEncounters: [10, 13, 46], 
+      unlockSteps: 15000,
+      normalPokemonIds: [10, 11, 13, 14, 16], // Caterpie, Metapod, Weedle, Kakuna, Pidgey
+      rarePokemonIds: [12, 15, 25], // Butterfree, Beedrill, Pikachu
+      minLevel: 6,
+      maxLevel: 12,
     ),
-    Region(
+    const Region(
       id: 'mt_moon',
       name: 'Mt. Moon',
-      unlockSteps: GameConstants.regionMtMoonSteps, // Sabit kullanıldı
-      dayEncounters: [35, 74, 27], 
-      nightEncounters: [41, 74, 27], 
+      unlockSteps: 35000,
+      normalPokemonIds: [41, 74, 35], // Zubat, Geodude, Clefairy
+      rarePokemonIds: [95, 42, 66], // Onix, Golbat, Machop
+      minLevel: 10,
+      maxLevel: 18,
     ),
   ];
 
+  /// Toplam adımlara göre kullanıcının unlocked (açık) olduğu en yüksek bölgeyi döndürür
   static Region getCurrentRegion(int steps) {
-    Region current = regions.first;
-    for (var r in regions) {
-      if (steps >= r.unlockSteps) {
-        current = r;
+    Region unlockedRegion = regions.first;
+    for (var region in regions) {
+      if (steps >= region.unlockSteps) {
+        unlockedRegion = region;
       }
     }
-    return current;
+    return unlockedRegion;
   }
 
-  static int getRandomEncounter(int steps) {
-    final region = getCurrentRegion(steps);
-    final hour = DateTime.now().hour;
-    final isNight = hour < 6 || hour > 18;
-    
-    final pool = isNight ? region.nightEncounters : region.dayEncounters;
-    return pool[DateTime.now().millisecond % pool.length];
+  /// ID'ye göre bölge bulur
+  static Region getRegionById(String id) {
+    return regions.firstWhere(
+      (r) => r.id == id,
+      orElse: () => regions.first,
+    );
   }
 }

@@ -13,8 +13,7 @@ class PokemonSprite extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // URL tek bir merkezden yönetiliyor. 
-    // Gen 4 (Diamond/Pearl) tarzı piksel art spritelarını çağırıyoruz.
+    // Gen 4 (Diamond/Pearl) tarzı piksel art sprite URL'si
     final String url = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-iv/diamond-pearl/$pokemonId.png';
 
     return Image.network(
@@ -22,8 +21,10 @@ class PokemonSprite extends StatelessWidget {
       height: size,
       width: size,
       fit: BoxFit.contain,
-      filterQuality: FilterQuality.none, // Piksel görünümü korumak için (Bulanıklaşmayı önler)
+      // Piksel art görsellerin bulanıklaşmasını önler (Game Boy / DS hissi için kritik)
+      filterQuality: FilterQuality.none, 
       
+      // İnternet olmadığında veya yüklenemediğinde gösterilecek yedek (Fallback) widget
       errorBuilder: (context, error, stackTrace) {
         return Container(
           height: size,
@@ -31,29 +32,33 @@ class PokemonSprite extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.navy,
             shape: BoxShape.circle,
-            border: Border.all(color: AppColors.blue, width: 2),
+            border: Border.all(color: AppColors.blue, width: 1.5),
           ),
           child: Center(
             child: Icon(
               Icons.catching_pokemon, 
-              color: AppColors.blue.withOpacity(0.5), 
-              size: size * 0.5
+              color: AppColors.blue.withValues(alpha: 0.6), 
+              size: size * 0.45,
             ),
           ),
         );
       },
-    
+      
+      // İlk yükleme anındaki zarif placeholder (Yükleniyor göstergesi)
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) return child;
         return SizedBox(
           height: size,
           width: size,
-          child: const Center(
+          child: Center(
             child: SizedBox(
-              width: 20, 
-              height: 20, 
-              child: CircularProgressIndicator(color: AppColors.blue, strokeWidth: 2)
-            )
+              width: size * 0.3,
+              height: size * 0.3,
+              child: const CircularProgressIndicator(
+                color: AppColors.blue,
+                strokeWidth: 2,
+              ),
+            ),
           ),
         );
       },

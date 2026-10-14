@@ -17,7 +17,7 @@ class QuestProvider extends ChangeNotifier {
   Future<void> _loadQuests() async {
     final prefs = await SharedPreferences.getInstance();
     _lastQuestDate = prefs.getString('last_quest_date') ?? "";
-    
+
     final today = DateTime.now().toIso8601String().split('T')[0];
 
     if (_lastQuestDate != today) {
@@ -54,8 +54,8 @@ class QuestProvider extends ChangeNotifier {
     bool changed = false;
     for (var q in _dailyQuests.where((q) => q.type == 'step' && !q.isClaimed)) {
       if (q.progress != totalDailySteps) {
-         q.progress = totalDailySteps;
-         changed = true;
+        q.progress = totalDailySteps;
+        changed = true;
       }
     }
     if (changed) {
@@ -76,29 +76,33 @@ class QuestProvider extends ChangeNotifier {
     }
   }
 
-  // YENİ: TrainerProvider'ı içeri alıyoruz. İşlemler artık kilitli ve tek seferlik!
-  bool claimReward(String questId, TrainerProvider trainer) {
+  // Transaction benzeri sıralı işlem: XP diske başarıyla yazılmadan görev kilitlenip kaydedilmez.
+  Future<bool> claimReward(String questId, TrainerProvider trainer) async {
     final questIndex = _dailyQuests.indexWhere((q) => q.id == questId);
     if (questIndex != -1) {
       final q = _dailyQuests[questIndex];
-      // Eğer görev bittiyse ve henüz alınmadıysa işlemi başlat
       if (q.progress >= q.target && !q.isClaimed) {
-        // 1. Önce kilitliyoruz (Double-tap hilesini engeller)
-        q.isClaimed = true; 
-        
-        // 2. XP'yi Trainer'a aktarıyoruz
-        trainer.addXp(q.rewardXp);
-        
-        // 3. Görevin alındığını diske kaydediyoruz
-        _saveQuests();
-        notifyListeners();
-        return true;
+        q.isClaimed = true;
+
+        try {
+          // 1. Önce XP TrainerProvider'a yazılıp diske kaydedilene kadar beklenir
+          await trainer.addXp(q.rewardXp);
+
+          // 2. XP kaydedildikten sonra görev güncellenerek diske yazılır
+          await _saveQuests();
+          notifyListeners();
+          return true;
+        } catch (e) {
+          // Hata oluşursa durum geri alınır (rollback)
+          q.isClaimed = false;
+          notifyListeners();
+          return false;
+        }
       }
     }
     return false;
   }
 
-  // YENİ: TrainerProvider "Gün değişti" dediğinde bunu çağırıp görevleri sıfırlayacak
   void forceResetQuestsForNewDay() async {
     final today = DateTime.now().toIso8601String().split('T')[0];
     if (_lastQuestDate != today) {

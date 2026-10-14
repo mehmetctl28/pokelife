@@ -9,37 +9,50 @@ class XpBarWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trainer = context.watch<TrainerProvider>();
-    
-    // Güvenlik: Sıfıra bölünme hatasını engellemek için
-    final double progress = trainer.nextLevelXp > 0 
-        ? trainer.currentLevelXp / trainer.nextLevelXp 
-        : 0.0;
+    final partner = trainer.activePartner;
 
-    return Row(
+    // Aktif partnerin bireysel verileri
+    final int level = partner?.level ?? 5;
+    final int currentXp = partner?.xp ?? 0;
+    final int maxXp = partner?.nextLevelXp ?? 500;
+    final double progress = (maxXp > 0) ? (currentXp / maxXp).clamp(0.0, 1.0) : 0.0;
+
+    return Column(
       children: [
-        // Raporun istediği: LV. 4
-        Text('LV. ${trainer.level}', style: const TextStyle(color: AppColors.yellow, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
-        const SizedBox(width: 12),
-        
-        // Raporun istediği: ██████░░░░ (Dinamik Çubuk)
-        Expanded(
-          child: Container(
-            height: 14,
-            decoration: BoxDecoration(
-              color: AppColors.navy,
-              border: Border.all(color: AppColors.cream, width: 2)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'LV. $level',
+              style: const TextStyle(
+                color: AppColors.cream,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
             ),
-            child: LinearProgressIndicator(
-              value: progress, 
-              backgroundColor: Colors.transparent,
-              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.green),
+            Text(
+              '$currentXp / $maxXp XP',
+              style: const TextStyle(
+                color: AppColors.yellow,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
             ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 12,
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.cream, width: 2),
+          ),
+          child: LinearProgressIndicator(
+            value: progress,
+            backgroundColor: AppColors.navy,
+            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.green),
           ),
         ),
-        const SizedBox(width: 12),
-        
-        // Raporun istediği: 240 / 400 XP
-        Text('${trainer.currentLevelXp} / ${trainer.nextLevelXp} XP', style: const TextStyle(color: AppColors.cream, fontSize: 10, fontWeight: FontWeight.bold)),
       ],
     );
   }
