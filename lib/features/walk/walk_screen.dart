@@ -7,10 +7,10 @@ import 'package:pokelife/core/theme/app_colors.dart';
 import 'package:pokelife/core/providers/trainer_provider.dart';
 import 'package:pokelife/core/providers/quest_provider.dart';
 import 'package:pokelife/core/data/world_data.dart';
-import 'package:pokelife/core/data/pokemon_data.dart';
+import 'package:pokelife/core/data/gym_data.dart';
 import 'package:pokelife/core/models/region.dart';
-import 'package:pokelife/core/widgets/pokemon_sprite.dart';
 import 'package:pokelife/core/constants/game_constants.dart';
+import 'package:pokelife/features/battle/battle_screen.dart';
 
 class WalkScreen extends StatefulWidget {
   const WalkScreen({super.key});
@@ -26,12 +26,21 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
   String _status = 'STOPPED';
   bool isSearching = false;
   bool _permissionGranted = false;
+  List<String> _earnedBadges = [];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _requestPermissionAndInit();
+    _refreshBadges();
+  }
+
+  Future<void> _refreshBadges() async {
+    final badges = await GymData.getEarnedBadges();
+    if (mounted) {
+      setState(() => _earnedBadges = badges);
+    }
   }
 
   @override
@@ -94,195 +103,39 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
 
     setState(() => isSearching = true);
 
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    Future.delayed(const Duration(milliseconds: 900), () {
       if (!mounted) return;
       setState(() => isSearching = false);
 
       final int pokeId = currentRegion.getRandomPokemonId(isRare: isRare);
       final int wildLevel = currentRegion.getWildLevel(isRare: isRare);
 
-      _showEncounterDialog(pokeId, wildLevel, isRare, currentRegion);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BattleScreen(
+            wildPokemonId: pokeId,
+            wildLevel: wildLevel,
+            isRare: isRare,
+            region: currentRegion,
+          ),
+        ),
+      );
     });
   }
 
-  void _showEncounterDialog(int pokeId, int wildLevel, bool isRare, Region currentRegion) {
-    final pokeName = PokemonData.getName(pokeId);
-    final pokeType = PokemonData.getType(pokeId);
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          bool isThrowing = false;
-
-          return Dialog(
-            backgroundColor: AppColors.darkBlue,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            shape: Border.all(
-              color: isRare ? AppColors.yellow : AppColors.cream,
-              width: isRare ? 3 : 2,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isRare ? AppColors.purple.withValues(alpha: 0.3) : AppColors.navy,
-                      border: Border.all(color: isRare ? AppColors.purple : AppColors.blue, width: 1),
-                    ),
-                    child: Text(
-                      isRare ? '★ RARE ENCOUNTER ★' : 'WILD POKÉMON',
-                      style: TextStyle(
-                        color: isRare ? AppColors.yellow : AppColors.cream,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    pokeName.toUpperCase(),
-                    style: const TextStyle(color: AppColors.cream, fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: AppColors.green, borderRadius: BorderRadius.circular(2)),
-                        child: Text(
-                          'Lv. $wildLevel',
-                          style: const TextStyle(color: AppColors.navy, fontSize: 8, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        pokeType,
-                        style: const TextStyle(color: AppColors.blue, fontSize: 8, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: AppColors.navy,
-                      border: Border.all(color: isRare ? AppColors.yellow : AppColors.blue, width: 2),
-                    ),
-                    child: Center(
-                      child: isThrowing
-                          ? const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text('🔴', style: TextStyle(fontSize: 28)),
-                                SizedBox(height: 6),
-                                Text('THROWING...', style: TextStyle(color: AppColors.yellow, fontSize: 7.5)),
-                              ],
-                            )
-                          : PokemonSprite(pokemonId: pokeId, size: 84),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Encountered in ${currentRegion.name}',
-                    style: const TextStyle(color: AppColors.blue, fontSize: 7.5),
-                  ),
-                  const SizedBox(height: 16),
-                  if (!isThrowing)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => Navigator.pop(dialogCtx),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: AppColors.blue, width: 1),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'RUN AWAY',
-                                  style: TextStyle(color: AppColors.blue, fontSize: 9),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 2,
-                          child: GestureDetector(
-                            onTap: () async {
-                              setDialogState(() => isThrowing = true);
-                              await Future.delayed(const Duration(milliseconds: 900));
-
-                              final trainerProv = context.read<TrainerProvider>();
-                              final questProv = context.read<QuestProvider>();
-
-                              bool isNew = await trainerProv.catchPokemon(
-                                pokeId,
-                                wildLevel: wildLevel,
-                                location: currentRegion.name,
-                              );
-
-                              int baseBonus = (trainerProv.activePartner?.friendshipHearts ?? 1) >= 4 ? 10 : 0;
-                              int xpGained = (isNew ? (isRare ? 60 : 30) : 15) + baseBonus;
-
-                              await trainerProv.addXp(xpGained);
-
-                              if (isNew) {
-                                questProv.addCatchProgress();
-                              }
-
-                              if (!context.mounted) return;
-                              Navigator.pop(dialogCtx);
-
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text(
-                                  isNew
-                                      ? 'GOTCHA! $pokeName (Lv. $wildLevel) was caught! +$xpGained XP'
-                                      : 'CAUGHT AGAIN! +$xpGained XP',
-                                  style: const TextStyle(fontSize: 9.5, color: AppColors.navy, fontWeight: FontWeight.bold),
-                                ),
-                                backgroundColor: AppColors.green,
-                                duration: const Duration(seconds: 3),
-                              ));
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: AppColors.green,
-                                border: Border.all(color: AppColors.green, width: 1),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'THROW POKÉBALL',
-                                  style: TextStyle(
-                                    color: AppColors.navy,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
+  Future<void> _challengeGymLeader(Region currentRegion, GymLeader leader) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BattleScreen(
+          wildPokemonId: leader.team.first.id,
+          wildLevel: leader.team.first.level,
+          isRare: true,
+          region: currentRegion,
+          gymLeader: leader,
+        ),
       ),
     );
+    await _refreshBadges();
   }
 
   void _showRegionSelector(BuildContext context, TrainerProvider trainer) {
@@ -300,12 +153,23 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
               const Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('MAP TRAVEL', style: TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                  Text(
+                    'MAP TRAVEL',
+                    style: TextStyle(
+                      color: AppColors.yellow,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
                   Icon(Icons.map, color: AppColors.yellow, size: 16),
                 ],
               ),
               const SizedBox(height: 8),
-              const Text('Select an unlocked region to explore:', style: TextStyle(color: AppColors.blue, fontSize: 8)),
+              const Text(
+                'Select an unlocked region to explore:',
+                style: TextStyle(color: AppColors.blue, fontSize: 8),
+              ),
               const Divider(color: AppColors.navy, height: 16),
               ...WorldData.regions.map((region) {
                 final bool isUnlocked = trainer.steps >= region.unlockSteps;
@@ -324,7 +188,9 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                     decoration: BoxDecoration(
                       color: isSelected ? AppColors.navy : Colors.transparent,
                       border: Border.all(
-                        color: isSelected ? AppColors.green : (isUnlocked ? AppColors.blue : AppColors.navy),
+                        color: isSelected
+                            ? AppColors.green
+                            : (isUnlocked ? AppColors.blue : AppColors.navy),
                         width: isSelected ? 2 : 1,
                       ),
                     ),
@@ -334,8 +200,12 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                         Row(
                           children: [
                             Icon(
-                              isUnlocked ? (isSelected ? Icons.check_circle : Icons.circle_outlined) : Icons.lock,
-                              color: isSelected ? AppColors.green : (isUnlocked ? AppColors.cream : AppColors.blue),
+                              isUnlocked
+                                  ? (isSelected ? Icons.check_circle : Icons.circle_outlined)
+                                  : Icons.lock,
+                              color: isSelected
+                                  ? AppColors.green
+                                  : (isUnlocked ? AppColors.cream : AppColors.blue),
                               size: 14,
                             ),
                             const SizedBox(width: 10),
@@ -345,19 +215,31 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                                 Text(
                                   region.name.toUpperCase(),
                                   style: TextStyle(
-                                    color: isSelected ? AppColors.green : (isUnlocked ? AppColors.cream : AppColors.blue),
+                                    color: isSelected
+                                        ? AppColors.green
+                                        : (isUnlocked ? AppColors.cream : AppColors.blue),
                                     fontSize: 9,
                                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                   ),
                                 ),
                                 if (!isUnlocked)
-                                  Text('Unlocks at ${region.unlockSteps} steps', style: const TextStyle(color: AppColors.blue, fontSize: 7)),
+                                  Text(
+                                    'Unlocks at ${region.unlockSteps} steps',
+                                    style: const TextStyle(color: AppColors.blue, fontSize: 7),
+                                  ),
                               ],
                             ),
                           ],
                         ),
                         if (isSelected)
-                          const Text('CURRENT', style: TextStyle(color: AppColors.green, fontSize: 7, fontWeight: FontWeight.bold)),
+                          const Text(
+                            'CURRENT',
+                            style: TextStyle(
+                              color: AppColors.green,
+                              fontSize: 7,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -383,6 +265,12 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
     final bool canSearchNormal = normalSearches > 0;
     final bool canSearchRare = rareSearches > 0;
 
+    final GymLeader regionLeader = GymData.getLeaderForRegion(
+      currentRegion.id,
+      currentRegion.name,
+    );
+    final bool hasRegionBadge = _earnedBadges.contains(regionLeader.badgeId);
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(20),
@@ -392,11 +280,17 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
             children: [
               Text(
                 isCamping ? '🏕️ CAMP RESTING' : '📍 ACTIVE AREA',
-                style: TextStyle(color: isCamping ? Colors.orangeAccent : AppColors.yellow, fontSize: 10),
+                style: TextStyle(
+                  color: isCamping ? Colors.orangeAccent : AppColors.yellow,
+                  fontSize: 10,
+                ),
               ),
               Text(
                 'STATUS: ${_status.toUpperCase()}',
-                style: TextStyle(color: _status.toLowerCase() == 'walking' ? AppColors.green : AppColors.blue, fontSize: 8),
+                style: TextStyle(
+                  color: _status.toLowerCase() == 'walking' ? AppColors.green : AppColors.blue,
+                  fontSize: 8,
+                ),
               ),
             ],
           ),
@@ -418,13 +312,84 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                     Text('🗺️ ', style: TextStyle(fontSize: 12)),
                     Text(
                       'WORLD PROGRESS',
-                      style: TextStyle(color: AppColors.yellow, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1),
+                      style: TextStyle(
+                        color: AppColors.yellow,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ],
                 ),
                 Text(
                   '${trainer.steps} TOTAL STEPS',
-                  style: const TextStyle(color: AppColors.green, fontSize: 8, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: AppColors.green,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // KANTO GYM BADGE CASE (Rozet Kutusu & Aktif Pasif Bonuslar)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: AppColors.darkBlue,
+              border: Border.all(color: AppColors.yellow, width: 1.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '🏅 GYM BADGE CASE',
+                      style: TextStyle(
+                        color: AppColors.yellow,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      _earnedBadges.isEmpty
+                          ? 'NO BADGES YET'
+                          : '+${_earnedBadges.length * 5}% DMG | +${_earnedBadges.length * 3}% CATCH',
+                      style: const TextStyle(
+                        color: AppColors.green,
+                        fontSize: 7.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: GymData.leaders.map((leader) {
+                    final bool unlocked = _earnedBadges.contains(leader.badgeId);
+                    return Opacity(
+                      opacity: unlocked ? 1.0 : 0.3,
+                      child: Column(
+                        children: [
+                          Text(leader.badgeEmoji, style: const TextStyle(fontSize: 16)),
+                          const SizedBox(height: 2),
+                          Text(
+                            leader.leaderName,
+                            style: TextStyle(
+                              color: unlocked ? AppColors.cream : AppColors.blue,
+                              fontSize: 6.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
                 ),
               ],
             ),
@@ -436,7 +401,10 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: AppColors.darkBlue,
-                border: Border.all(color: isCamping ? Colors.orangeAccent : AppColors.cream, width: 2),
+                border: Border.all(
+                  color: isCamping ? Colors.orangeAccent : AppColors.cream,
+                  width: 2,
+                ),
               ),
               child: Column(
                 children: [
@@ -448,7 +416,11 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                       Flexible(
                         child: Text(
                           isCamping ? 'RESTING AT CAMP (Idle)' : currentRegion.name.toUpperCase(),
-                          style: const TextStyle(color: AppColors.cream, fontSize: 11, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: AppColors.cream,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -466,6 +438,68 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
+          const SizedBox(height: 14),
+
+          // GYM LEADER BOSS CHALLENGE KARTI
+          GestureDetector(
+            onTap: () => _challengeGymLeader(currentRegion, regionLeader),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.navy,
+                border: Border.all(
+                  color: hasRegionBadge ? AppColors.green : AppColors.yellow,
+                  width: 2,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasRegionBadge
+                              ? '${regionLeader.badgeEmoji} ${regionLeader.badgeName.toUpperCase()} EARNED'
+                              : '👑 GYM BOSS: ${regionLeader.leaderName} (${regionLeader.title})',
+                          style: TextStyle(
+                            color: hasRegionBadge ? AppColors.green : AppColors.yellow,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          hasRegionBadge
+                              ? 'Tap for a rematch! (+${regionLeader.rewardXp ~/ 2} XP)'
+                              : 'Defeat ${regionLeader.leaderName} to earn ${regionLeader.badgeName} (${regionLeader.perkDescription})',
+                          style: const TextStyle(color: AppColors.cream, fontSize: 7.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: hasRegionBadge ? AppColors.darkBlue : AppColors.yellow,
+                      border: Border.all(color: AppColors.cream, width: 1),
+                    ),
+                    child: Text(
+                      hasRegionBadge ? 'REMATCH' : 'BATTLE',
+                      style: TextStyle(
+                        color: hasRegionBadge ? AppColors.cream : AppColors.navy,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           const SizedBox(height: 20),
           if (!_permissionGranted)
             Container(
@@ -529,8 +563,12 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                 ),
                 child: Center(
                   child: Text(
-                    isSearching ? 'SEARCHING THE AREA...' : '🔍 SEARCH AREA ($normalSearches)',
-                    style: const TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.bold),
+                    isSearching ? 'ENTERING TALL GRASS...' : '⚔️ SEARCH & BATTLE ($normalSearches)',
+                    style: const TextStyle(
+                      color: AppColors.green,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -549,8 +587,12 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                 ),
                 child: Center(
                   child: Text(
-                    isSearching ? 'SEARCHING DEEP AREA...' : '✨ SEARCH DEEP AREA ($rareSearches)',
-                    style: const TextStyle(color: AppColors.purple, fontSize: 10, fontWeight: FontWeight.bold),
+                    isSearching ? 'SEARCHING DEEP AREA...' : '✨ RARE ENCOUNTER BATTLE ($rareSearches)',
+                    style: const TextStyle(
+                      color: AppColors.purple,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -578,8 +620,14 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('$dailySteps / ${GameConstants.dailyRareGoal} STEPS', style: const TextStyle(color: AppColors.cream, fontSize: 8)),
-                    Text('${(dailySteps / 250).floor()} XP earned', style: const TextStyle(color: AppColors.yellow, fontSize: 8)),
+                    Text(
+                      '$dailySteps / ${GameConstants.dailyRareGoal} STEPS',
+                      style: const TextStyle(color: AppColors.cream, fontSize: 8),
+                    ),
+                    Text(
+                      '${(dailySteps / 250).floor()} XP earned',
+                      style: const TextStyle(color: AppColors.yellow, fontSize: 8),
+                    ),
                   ],
                 ),
               ],
@@ -591,7 +639,13 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildMilestoneRow(String title, bool isCompleted, String statusText, String description, BuildContext context) {
+  Widget _buildMilestoneRow(
+    String title,
+    bool isCompleted,
+    String statusText,
+    String description,
+    BuildContext context,
+  ) {
     return GestureDetector(
       onTap: () {
         showDialog(
@@ -606,9 +660,20 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                 children: [
                   const Text('ACTION INFO', style: TextStyle(color: AppColors.yellow, fontSize: 10)),
                   const SizedBox(height: 12),
-                  Text(title, style: const TextStyle(color: AppColors.cream, fontSize: 11, fontWeight: FontWeight.bold)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.cream,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text(description, style: const TextStyle(color: AppColors.blue, fontSize: 9), textAlign: TextAlign.center),
+                  Text(
+                    description,
+                    style: const TextStyle(color: AppColors.blue, fontSize: 9),
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 16),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
@@ -642,7 +707,10 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
                   Flexible(
                     child: Text(
                       title,
-                      style: TextStyle(color: isCompleted ? AppColors.cream : AppColors.blue, fontSize: 9),
+                      style: TextStyle(
+                        color: isCompleted ? AppColors.cream : AppColors.blue,
+                        fontSize: 9,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -652,7 +720,13 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
             const SizedBox(width: 8),
             Row(
               children: [
-                Text(statusText, style: TextStyle(color: isCompleted ? AppColors.green : AppColors.cream, fontSize: 8)),
+                Text(
+                  statusText,
+                  style: TextStyle(
+                    color: isCompleted ? AppColors.green : AppColors.cream,
+                    fontSize: 8,
+                  ),
+                ),
                 const SizedBox(width: 4),
                 const Icon(Icons.info_outline, color: AppColors.blue, size: 12),
               ],
