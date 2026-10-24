@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:math';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -23,9 +24,12 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
   StreamSubscription<StepCount>? _stepCountStreamSubscription;
   StreamSubscription<PedestrianStatus>? _pedestrianStatusStreamSubscription;
 
+  final Random _rng = Random();
   String _status = 'STOPPED';
   bool isSearching = false;
   bool _permissionGranted = false;
+  bool _permissionPermanentlyDenied = false;
+  String? _sensorError;
   List<String> _earnedBadges = [];
 
   @override
@@ -53,27 +57,64 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (_permissionGranted) _initPedometer();
+      if (_permissionGranted) {
+        _initPedometer();
+      } else {
+        _checkPermissionStatusOnly();
+      }
     } else if (state == AppLifecycleState.paused) {
       _stopPedometer();
     }
   }
 
-  Future<void> _requestPermissionAndInit() async {
-    PermissionStatus status = await Permission.activityRecognition.request();
+  Future<void> _checkPermissionStatusOnly() async {
+    final status = await Permission.activityRecognition.status;
+    if (!mounted) return;
     if (status.isGranted) {
-      setState(() => _permissionGranted = true);
+      setState(() {
+        _permissionGranted = true;
+        _permissionPermanentlyDenied = false;
+      });
       _initPedometer();
+    }
+  }
+
+  Future<void> _requestPermissionAndInit() async {
+    final status = await Permission.activityRecognition.request();
+    if (!mounted) return;
+
+    if (status.isGranted) {
+      setState(() {
+        _permissionGranted = true;
+        _permissionPermanentlyDenied = false;
+        _sensorError = null;
+      });
+      _initPedometer();
+    } else {
+      setState(() {
+        _permissionGranted = false;
+        _permissionPermanentlyDenied = status.isPermanentlyDenied;
+      });
     }
   }
 
   void _initPedometer() {
     _stopPedometer();
-    _pedestrianStatusStreamSubscription = Pedometer.pedestrianStatusStream
-        .listen(onPedestrianStatusChanged, onError: (e) {});
+    _pedestrianStatusStreamSubscription = Pedometer.pedestrianStatusStream.listen(
+      onPedestrianStatusChanged,
+      onError: (e) {
+        if (mounted) setState(() => _status = 'IDLE');
+      },
+    );
 
-    _stepCountStreamSubscription = Pedometer.stepCountStream
-        .listen(onStepCount, onError: (e) {});
+    _stepCountStreamSubscription = Pedometer.stepCountStream.listen(
+      onStepCount,
+      onError: (e) {
+        if (mounted) {
+          setState(() => _sensorError = 'Step sensor unavailable on this device.');
+        }
+      },
+    );
   }
 
   void _stopPedometer() {
@@ -93,12 +134,25 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
   }
 
   void _triggerEncounter(bool isRare, Region currentRegion) {
+    if (isSearching) return;
     final trainer = context.read<TrainerProvider>();
 
-    if (isRare) {
-      trainer.consumeRareSearch();
-    } else {
-      trainer.consumeNormalSearch();
+    // ATOMİK HAK TÜKETİMİ: Hak yoksa işlem hiç başlamaz
+    final bool consumed = isRare
+        ? trainer.tryConsumeRareSearch()
+        : trainer.tryConsumeNormalSearch();
+
+    if (!consumed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No search charges available! Walk more steps to recharge.',
+            style: TextStyle(fontSize: 9, color: AppColors.cream),
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
     }
 
     setState(() => isSearching = true);
@@ -107,15 +161,19 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() => isSearching = false);
 
-      final int pokeId = currentRegion.getRandomPokemonId(isRare: isRare);
-      final int wildLevel = currentRegion.getWildLevel(isRare: isRare);
+      // Perk 2 (Scout Bond): 2+ kalp varsa normal aramada bile %15 nadir Pokémon şansı!
+      final bool effectiveRare =
+          isRare || (trainer.hasScoutBondSynergy && _rng.nextDouble() < 0.15);
+
+      final int pokeId = currentRegion.getRandomPokemonId(isRare: effectiveRare);
+      final int wildLevel = currentRegion.getWildLevel(isRare: effectiveRare);
 
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => BattleScreen(
             wildPokemonId: pokeId,
             wildLevel: wildLevel,
-            isRare: isRare,
+            isRare: effectiveRare,
             region: currentRegion,
           ),
         ),
@@ -333,7 +391,7 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
             ),
           ),
 
-          // KANTO GYM BADGE CASE (Rozet Kutusu & Aktif Pasif Bonuslar)
+          // KANTO GYM BADGE CASE
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             margin: const EdgeInsets.only(bottom: 10),
@@ -501,19 +559,94 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
           ),
 
           const SizedBox(height: 20),
+
+          // DÜZELTME: İzin reddedildiğinde TRY AGAIN ve OPEN SETTINGS kurtarma butonları
           if (!_permissionGranted)
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
                 color: AppColors.navy,
                 border: Border.all(color: Colors.redAccent, width: 2),
               ),
-              child: const Text(
-                'MOTION PERMISSION REQUIRED TO TRACK STEPS.',
-                style: TextStyle(color: AppColors.yellow, fontSize: 9),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '⚠️ MOTION PERMISSION REQUIRED TO TRACK STEPS.',
+                    style: TextStyle(
+                      color: AppColors.yellow,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _permissionPermanentlyDenied
+                        ? 'Permission was permanently denied. Please enable Physical Activity in App Settings.'
+                        : 'Allow activity recognition so your real-world steps power your partner!',
+                    style: const TextStyle(color: AppColors.cream, fontSize: 7.5),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: _requestPermissionAndInit,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.darkBlue,
+                            border: Border.all(color: AppColors.green, width: 1.5),
+                          ),
+                          child: const Text(
+                            'TRY AGAIN',
+                            style: TextStyle(
+                              color: AppColors.green,
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: () => openAppSettings(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.darkBlue,
+                            border: Border.all(color: AppColors.yellow, width: 1.5),
+                          ),
+                          child: const Text(
+                            'OPEN SETTINGS',
+                            style: TextStyle(
+                              color: AppColors.yellow,
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
+
+          if (_sensorError != null)
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.darkBlue,
+                border: Border.all(color: Colors.orangeAccent, width: 1.5),
+              ),
+              child: Text(
+                'ℹ️ $_sensorError',
+                style: const TextStyle(color: Colors.orangeAccent, fontSize: 8),
+              ),
+            ),
+
           const Text('DAILY ACTION GOALS', style: TextStyle(color: AppColors.yellow, fontSize: 10)),
           const SizedBox(height: 12),
           Container(
@@ -611,7 +744,8 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 LinearProgressIndicator(
-                  value: (dailySteps / GameConstants.dailyRareGoal).clamp(0.0, 1.0),
+                  // DÜZELTME: .toDouble() ile tip güvenliği sağlandı
+                  value: (dailySteps / GameConstants.dailyRareGoal).clamp(0.0, 1.0).toDouble(),
                   minHeight: 10,
                   backgroundColor: AppColors.navy,
                   valueColor: const AlwaysStoppedAnimation<Color>(AppColors.green),

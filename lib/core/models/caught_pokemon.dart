@@ -5,7 +5,7 @@ class CaughtPokemon {
   int friendshipPoints; // 0 - 100 arası
   int stepsWalked;
   DateTime caughtAt;
-  String? caughtLocation; // YENİ: Yakalandığı bölge (örn. "Route 1", "Mt. Moon")
+  String? caughtLocation;
 
   CaughtPokemon({
     required this.id,
@@ -17,8 +17,8 @@ class CaughtPokemon {
     this.caughtLocation,
   });
 
-  // 20 puanda bir 1 kalp (Maksimum 5)
-  int get friendshipHearts => (friendshipPoints ~/ 20).clamp(1, 5);
+  // 20 puanda bir 1 kalp (Maksimum 5) - .toInt() ile tip güvenliği sağlandı
+  int get friendshipHearts => (friendshipPoints ~/ 20).clamp(1, 5).toInt();
 
   int get nextLevelXp => level * 100;
 
@@ -51,19 +51,19 @@ class CaughtPokemon {
   }
 
   void addFriendshipPoints(int points) {
-    friendshipPoints = (friendshipPoints + points).clamp(0, 100);
+    friendshipPoints = (friendshipPoints + points).clamp(0, 100).toInt();
   }
 
   String get activePerkDescription {
     switch (friendshipHearts) {
       case 5:
-        return '★ BEST BUDDY: +25% Total XP Bonus';
+        return '★ BEST BUDDY: +25% Trainer & Partner XP (All Perks Active)';
       case 4:
-        return '★ LUCKY FIND: +10 Extra XP per Catch';
+        return '★ LUCKY FIND: +10 Catch XP & 4.5k Step Search';
       case 3:
-        return '★ ENERGY SAVER: 4.5k Steps Search Cost';
+        return '★ ENERGY SAVER: 4.5k Steps Search Cost & +15% Rare Chance';
       case 2:
-        return '★ SCOUT BOND: Higher encounter synergy';
+        return '★ SCOUT BOND: +15% Rare Encounter Synergy';
       case 1:
       default:
         return '★ STARTER BOND: +10% Partner XP Gain';
@@ -87,7 +87,8 @@ class CaughtPokemon {
       id: map['id'] as int,
       level: map['level'] as int? ?? 5,
       xp: map['xp'] as int? ?? 0,
-      friendshipPoints: map['friendshipPoints'] as int? ?? ((map['friendship'] as int? ?? 1) * 20),
+      friendshipPoints: map['friendshipPoints'] as int? ??
+          (((map['friendship'] as int? ?? 1) * 20).clamp(0, 100).toInt()),
       stepsWalked: map['stepsWalked'] as int? ?? 0,
       caughtAt: DateTime.tryParse(map['caughtAt'] as String? ?? '') ?? DateTime.now(),
       caughtLocation: map['caughtLocation'] as String?,

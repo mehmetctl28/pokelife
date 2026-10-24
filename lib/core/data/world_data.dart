@@ -1,52 +1,65 @@
+import 'package:pokelife/core/constants/game_constants.dart';
 import 'package:pokelife/core/models/region.dart';
 
 class WorldData {
   static final List<Region> regions = [
-    const Region(
+    Region(
       id: 'route_1',
       name: 'Route 1',
-      unlockSteps: 0,
-      normalPokemonIds: [1, 4, 7, 10, 13, 16, 19], // Bulbasaur, Charmander, Squirtle, Caterpie, Weedle, Pidgey, Rattata vb.
-      rarePokemonIds: [25, 35, 39], // Pikachu, Clefairy, Jigglypuff
-      minLevel: 3,
-      maxLevel: 7,
+      unlockSteps: GameConstants.route1UnlockSteps,
+      minLevel: 2,
+      maxLevel: 5,
+      normalPokemonIds: const [16, 19, 10, 13], // Pidgey, Rattata, Caterpie, Weedle
+      rarePokemonIds: const [25, 1, 4, 7], // Pikachu, Bulbasaur, Charmander, Squirtle
     ),
-    const Region(
+    Region(
       id: 'viridian_forest',
       name: 'Viridian Forest',
-      unlockSteps: 15000,
-      normalPokemonIds: [10, 11, 13, 14, 16], // Caterpie, Metapod, Weedle, Kakuna, Pidgey
-      rarePokemonIds: [12, 15, 25], // Butterfree, Beedrill, Pikachu
+      unlockSteps: GameConstants.viridianForestUnlockSteps,
       minLevel: 6,
       maxLevel: 12,
+      normalPokemonIds: const [10, 11, 13, 14, 16, 43], // Caterpie, Metapod, Weedle, Kakuna, Pidgey, Oddish
+      rarePokemonIds: const [25, 12, 15, 17], // Pikachu, Butterfree, Beedrill, Pidgeotto
     ),
-    const Region(
+    Region(
       id: 'mt_moon',
       name: 'Mt. Moon',
-      unlockSteps: 35000,
-      normalPokemonIds: [41, 74, 35], // Zubat, Geodude, Clefairy
-      rarePokemonIds: [95, 42, 66], // Onix, Golbat, Machop
-      minLevel: 10,
+      unlockSteps: GameConstants.mtMoonUnlockSteps,
+      minLevel: 12,
       maxLevel: 18,
+      normalPokemonIds: const [41, 74, 27, 50], // Zubat, Geodude, Sandshrew, Diglett
+      rarePokemonIds: const [35, 95, 42, 63], // Clefairy, Onix, Golbat, Abra
+    ),
+    Region(
+      id: 'cerulean_city',
+      name: 'Cerulean Cape',
+      unlockSteps: GameConstants.ceruleanCityUnlockSteps,
+      minLevel: 18,
+      maxLevel: 25,
+      normalPokemonIds: const [60, 69, 54, 120, 129], // Poliwag, Bellsprout, Psyduck, Staryu, Magikarp
+      rarePokemonIds: const [121, 130, 58, 147], // Starmie, Gyarados, Growlithe, Dratini
     ),
   ];
 
-  /// Toplam adımlara göre kullanıcının unlocked (açık) olduğu en yüksek bölgeyi döndürür
-  static Region getCurrentRegion(int steps) {
-    Region unlockedRegion = regions.first;
-    for (var region in regions) {
-      if (steps >= region.unlockSteps) {
-        unlockedRegion = region;
-      }
-    }
-    return unlockedRegion;
+  /// Adım sayısına göre açılmış en ileri bölgeyi döndürür
+  static Region getCurrentRegion(int totalSteps) {
+    final unlocked = regions.where((r) => totalSteps >= r.unlockSteps).toList();
+    if (unlocked.isEmpty) return regions.first;
+    return unlocked.last;
   }
 
-  /// ID'ye göre bölge bulur
+  /// ID'ye göre bölge döndürür
   static Region getRegionById(String id) {
-    return regions.firstWhere(
-      (r) => r.id == id,
-      orElse: () => regions.first,
+    return regions.firstWhere((r) => r.id == id, orElse: () => regions.first);
+  }
+
+  /// Kullanıcının seçtiği bölge açıksa onu, değilse açılmış en son bölgeyi döndürür
+  static Region resolveActiveRegion(int totalSteps, String selectedRegionId) {
+    final unlocked = regions.where((r) => totalSteps >= r.unlockSteps).toList();
+    if (unlocked.isEmpty) return regions.first;
+    return unlocked.firstWhere(
+      (r) => r.id == selectedRegionId,
+      orElse: () => unlocked.last,
     );
   }
 }

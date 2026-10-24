@@ -7,25 +7,16 @@ import 'package:pokelife/core/data/world_data.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('PokéLife 7 Core Game Logic Unit Tests', () {
+  group('PokéLife Core Game Logic Unit Tests', () {
     late TrainerProvider trainer;
     late QuestProvider questProvider;
 
     /// Yardımcı fonksiyon: SharedPreferences mock verisiyle TrainerProvider'ı
-    /// başlatır ve asenkron _loadData() işleminin bitmesini bekler.
+    /// sıfırdan gerçek bir yeni oyuncu gibi başlatır.
     Future<TrainerProvider> createInitializedTrainer([
       Map<String, Object> customPrefs = const {},
     ]) async {
       SharedPreferences.setMockInitialValues({
-        // Başarım kaynaklı ekstra XP'lerin saf adım-XP testini bozmaması için:
-        'unlocked_achievements': <String>[
-          'first_steps',
-          'first_catch',
-          'getting_serious',
-          'long_walker',
-          'collector',
-          'explorer',
-        ],
         ...customPrefs,
       });
 
@@ -51,6 +42,7 @@ void main() {
       expect(trainer.dailySteps, 249);
       expect(trainer.xp - initialTrainerXp, 0);
       expect(trainer.activePartner!.xp - initialPartnerXp, 0);
+      expect(trainer.unlockedAchievements.contains('first_catch'), false);
     });
 
     // Test 2: 250 steps → 1 XP
@@ -100,25 +92,28 @@ void main() {
       expect(missedDayTrainer.streak, 0);
     });
 
-    // Test 6: level 16 Bulbasaur → Ivysaur
-    test('Test 6: level 16 Bulbasaur -> evolves into Ivysaur (id: 2)', () async {
-      // Başlangıç partneri Bulbasaur (id: 1, level: 5)
+    // Test 6: level 16 Bulbasaur → Ivysaur (Eski Pokémon silinmeden koleksiyonda kalır)
+    test('Test 6: level 16 Bulbasaur -> evolves into Ivysaur (id: 2) and retains Bulbasaur', () async {
       expect(trainer.activePartner!.id, 1);
 
       // Seviye 15'te evrim gerçekleşmemeli
       trainer.activePartner!.level = 15;
+      expect(trainer.canEvolvePartner, false);
       expect(trainer.triggerManualEvolution(), false);
       expect(trainer.activePartner!.id, 1);
 
       // Seviye 16'ya ulaştığında (15 -> 16 için 1500 XP gerekir)
       await trainer.addXp(1500);
       expect(trainer.activePartner!.level, greaterThanOrEqualTo(16));
+      expect(trainer.canEvolvePartner, true);
 
-      // Evrim tetiklendiğinde Ivysaur (id: 2) olmalı
+      // Evrim tetiklendiğinde Ivysaur (id: 2) olmalı ve Bulbasaur (id: 1) silinmemeli!
       final evolved = trainer.triggerManualEvolution();
       expect(evolved, true);
       expect(trainer.partnerId, 2);
       expect(trainer.activePartner!.id, 2);
+      expect(trainer.caughtPokemonIds.contains(1), true);
+      expect(trainer.caughtPokemonIds.contains(2), true);
     });
 
     // Test 7: Toplam adım eşiği → Viridian Forest kilidi açılması
@@ -137,6 +132,55 @@ void main() {
       await trainer.addSteps(1, questProvider);
       trainer.selectRegion('viridian_forest');
       expect(trainer.currentRegion.id, 'viridian_forest');
+    });
+
+    // Test 8: Starter Pokémon 'first_catch' açmaz, sadece gerçek vahşi yakalama açar
+    test('Test 8: Starter does not unlock first_catch; catching wild Pokémon does', () async {
+      await trainer.addSteps(500, questProvider);
+      expect(trainer.unlockedAchievements.contains('first_catch'), false);
+
+      final isNew = await trainer.catchPokemon(16, wildLevel: 4, location: 'Route 1');
+      expect(isNew, true);
+      expect(trainer.unlockedAchievements.contains('first_catch'), true);
+
+      // Aynı türü tekrar yakalamak koleksiyon sayısını artırmamalı
+      final isDuplicate = await trainer.catchPokemon(16, wildLevel: 4, location: 'Route 1');
+      expect(isDuplicate, false);
+      expect(trainer.caughtPokemonIds.length, 2); // Bulbasaur (1) + Pidgey (16)
+    });
+
+    // Test 9: Atomik arama hakkı kontrolü (Hak yoksa tüketilemez)
+    test('Test 9: Atomic search consumption prevents negative search charges', () async {
+      expect(trainer.availableNormalSearches, 0);
+      expect(trainer.tryConsumeNormalSearch(), false);
+      expect(trainer.availableNormalSearches, 0);
+
+      // 5000 adım -> 1 normal arama hakkı doğmalı
+      await trainer.addSteps(5000, questProvider);
+      expect(trainer.availableNormalSearches, 1);
+      expect(trainer.tryConsumeNormalSearch(), true);
+      expect(trainer.availableNormalSearches, 0);
+
+      // İkinci kez basılırsa reddedilmeli
+      expect(trainer.tryConsumeNormalSearch(), false);
+    });
+
+    // Test 10: Quest ödülü yalnızca bir kez alınabilir (Double-Claim Koruması)
+    test('Test 10: Quest reward can only be claimed once and never duplicates XP', () async {
+      // 1000 adım yürüyerek 'daily_walk_1000' görevini tamamla (+25 XP ödüllü)
+      await trainer.addSteps(1000, questProvider);
+      final xpBeforeClaim = trainer.xp;
+
+      // İlk talep başarılı olmalı
+      final firstClaim = await questProvider.claimReward('daily_walk_1000', trainer);
+      expect(firstClaim, true);
+      final xpAfterFirstClaim = trainer.xp;
+      expect(xpAfterFirstClaim, greaterThan(xpBeforeClaim));
+
+      // İkinci kez talep edildiğinde reddedilmeli ve XP kesinlikle artmamalı!
+      final secondClaim = await questProvider.claimReward('daily_walk_1000', trainer);
+      expect(secondClaim, false);
+      expect(trainer.xp, xpAfterFirstClaim);
     });
   });
 }

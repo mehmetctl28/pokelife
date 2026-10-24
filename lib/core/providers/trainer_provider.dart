@@ -21,6 +21,7 @@ class TrainerProvider extends ChangeNotifier {
   int _lastSystemStep = 0;
   int _partnerId = 1;
   int _bestDailySteps = 0;
+  bool _hasCaughtWildPokemon = false;
 
   // Harita Gezginliği (Seyahat) Durumu
   String _selectedRegionId = 'route_1';
@@ -39,6 +40,7 @@ class TrainerProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   int get partnerId => _partnerId;
   int get bestDailySteps => _bestDailySteps;
+  bool get hasCaughtWildPokemon => _hasCaughtWildPokemon;
   List<String> get unlockedAchievements => _unlockedAchievements;
   String get selectedRegionId => _selectedRegionId;
 
@@ -54,14 +56,39 @@ class TrainerProvider extends ChangeNotifier {
     );
   }
 
-  // Perk 3: Kalp 3 ve üzeri ise arama eşiği 4.500 adıma iner
+  // Perk 2 (Scout Bond): 2+ Kalp ise normal aramada bile %15 ihtimalle nadir havuzdan Pokémon çıkabilir
+  bool get hasScoutBondSynergy => (activePartner?.friendshipHearts ?? 1) >= 2;
+
+  // Perk 3 (Energy Saver): Kalp 3 ve üzeri ise arama eşiği 4.500 adıma iner
   int get _stepCostForSearch {
     final hearts = activePartner?.friendshipHearts ?? 1;
     return hearts >= 3 ? 4500 : 5000;
   }
 
-  int get availableNormalSearches => (_dailySteps ~/ _stepCostForSearch) - _usedNormalSearches;
-  int get availableRareSearches => (_dailySteps ~/ 10000) - _usedRareSearches;
+  int get availableNormalSearches {
+    final raw = (_dailySteps ~/ _stepCostForSearch) - _usedNormalSearches;
+    return raw < 0 ? 0 : raw;
+  }
+
+  int get availableRareSearches {
+    final raw = (_dailySteps ~/ 10000) - _usedRareSearches;
+    return raw < 0 ? 0 : raw;
+  }
+
+  // Aktif partnerin şu an evrimleşmeye hazır olup olmadığını kontrol eder (UI butonları için)
+  bool get canEvolvePartner {
+    final partner = activePartner;
+    if (partner == null) return false;
+    final evolutionRules = EvolutionData.evolutions[_partnerId];
+    if (evolutionRules == null) return false;
+    for (var requiredLevel in evolutionRules.keys) {
+      final nextId = evolutionRules[requiredLevel]!;
+      if (partner.level >= requiredLevel && _partnerId != nextId) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   int get level {
     int l = 1;
@@ -110,7 +137,8 @@ class TrainerProvider extends ChangeNotifier {
     _lastSystemStep = prefs.getInt('last_system_step') ?? 0;
     _partnerId = prefs.getInt('partner_id') ?? 1;
     _bestDailySteps = prefs.getInt('best_daily_steps') ?? 0;
-    _lastActiveDate = prefs.getString('trainer_last_active_date') ?? DateTime.now().toIso8601String().split('T')[0];
+    _lastActiveDate = prefs.getString('trainer_last_active_date') ??
+        DateTime.now().toIso8601String().split('T')[0];
 
     _selectedRegionId = prefs.getString('selected_region_id') ?? 'route_1';
 
@@ -131,15 +159,19 @@ class TrainerProvider extends ChangeNotifier {
           _caughtPokemonMap[id] = CaughtPokemon(
             id: id,
             level: (id == _partnerId) ? level : 5,
-            friendshipPoints: (id == _partnerId) ? (_streak.clamp(1, 5) * 20) : 20,
+            friendshipPoints: (id == _partnerId) ? (_streak.clamp(1, 5).toInt() * 20) : 20,
             caughtAt: DateTime.now(),
           );
         }
       } else {
         _caughtPokemonMap[1] = CaughtPokemon(id: 1, caughtAt: DateTime.now());
       }
-      _saveDetailedPokemons(prefs);
+      await _saveDetailedPokemons(prefs);
     }
+
+    // Başlangıç Pokémon'u dışında vahşi yakalama yapılıp yapılmadığını yükle
+    _hasCaughtWildPokemon =
+        prefs.getBool('has_caught_wild_pokemon') ?? (_caughtPokemonMap.length > 1);
 
     if (!_caughtPokemonMap.containsKey(_partnerId) && _caughtPokemonMap.isNotEmpty) {
       _partnerId = _caughtPokemonMap.keys.first;
@@ -147,7 +179,7 @@ class TrainerProvider extends ChangeNotifier {
 
     final List<String>? savedAchievements = prefs.getStringList('unlocked_achievements');
     if (savedAchievements != null) {
-      _unlockedAchievements = savedAchievements;
+      _unlockedAchievements = List<String>.from(savedAchievements);
     }
 
     _handleDateChanges(prefs, null);
@@ -158,11 +190,17 @@ class TrainerProvider extends ChangeNotifier {
   Future<void> _saveDetailedPokemons(SharedPreferences prefs) async {
     final list = _caughtPokemonMap.values.map((p) => json.encode(p.toMap())).toList();
     await prefs.setStringList('caught_pokemons_detailed', list);
-    await prefs.setStringList('caught_pokemons', _caughtPokemonMap.keys.map((e) => e.toString()).toList());
+    await prefs.setStringList(
+      'caught_pokemons',
+      _caughtPokemonMap.keys.map((e) => e.toString()).toList(),
+    );
   }
 
   void selectRegion(String regionId) async {
-    final region = WorldData.regions.firstWhere((r) => r.id == regionId, orElse: () => WorldData.regions.first);
+    final region = WorldData.regions.firstWhere(
+      (r) => r.id == regionId,
+      orElse: () => WorldData.regions.first,
+    );
     if (_steps >= region.unlockSteps) {
       _selectedRegionId = regionId;
       final prefs = await SharedPreferences.getInstance();
@@ -278,7 +316,6 @@ class TrainerProvider extends ChangeNotifier {
       await prefs.setInt('best_daily_steps', _bestDailySteps);
     }
 
-    // Aktif partnere özel adım ve arkadaşlık artışı
     final partner = activePartner;
     if (partner != null) {
       partner.addSteps(delta);
@@ -286,7 +323,12 @@ class TrainerProvider extends ChangeNotifier {
 
     int earnedXp = (_dailySteps ~/ 250) - (oldDaily ~/ 250);
     if (earnedXp > 0) {
-      _xp += earnedXp;
+      // Perk 5 (Best Buddy): 5 kalpte Trainer XP kazanımı da +%25 bonus alır
+      final int trainerEarnedXp =
+          (partner != null && partner.friendshipHearts >= 5)
+              ? (earnedXp * 1.25).round()
+              : earnedXp;
+      _xp += trainerEarnedXp;
       await prefs.setInt('trainer_xp', _xp);
       partner?.addXp(earnedXp);
     }
@@ -307,20 +349,25 @@ class TrainerProvider extends ChangeNotifier {
     await _saveDetailedPokemons(prefs);
 
     questProv.updateStepProgress(_dailySteps);
-    checkAchievements();
+    await checkAchievements();
     notifyListeners();
   }
 
   Future<void> addXp(int amount) async {
-    _xp += amount;
     final partner = activePartner;
+    final int boostedTrainerXp =
+        (partner != null && partner.friendshipHearts >= 5)
+            ? (amount * 1.25).round()
+            : amount;
+
+    _xp += boostedTrainerXp;
     partner?.addXp(amount);
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('trainer_xp', _xp);
     await _saveDetailedPokemons(prefs);
 
-    checkAchievements();
+    await checkAchievements();
     notifyListeners();
   }
 
@@ -328,6 +375,17 @@ class TrainerProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
 
     activePartner?.addFriendshipPoints(1);
+
+    // Gerçek vahşi yakalama gerçekleşti (FIRST CATCH başarımı için)
+    _hasCaughtWildPokemon = true;
+    await prefs.setBool('has_caught_wild_pokemon', true);
+
+    // Perk 4 (Lucky Find): Partner 4+ kalpliyse her yakalamada ekstra +10 XP
+    if ((activePartner?.friendshipHearts ?? 1) >= 4) {
+      _xp += 10;
+      activePartner?.addXp(10);
+      await prefs.setInt('trainer_xp', _xp);
+    }
 
     if (!_caughtPokemonMap.containsKey(pokeId)) {
       _caughtPokemonMap[pokeId] = CaughtPokemon(
@@ -338,18 +396,19 @@ class TrainerProvider extends ChangeNotifier {
         caughtLocation: location,
       );
       await _saveDetailedPokemons(prefs);
-      checkAchievements();
+      await checkAchievements();
       notifyListeners();
       return true;
     } else {
       _caughtPokemonMap[pokeId]?.addXp(25);
       await _saveDetailedPokemons(prefs);
+      await checkAchievements();
       notifyListeners();
       return false;
     }
   }
 
-  void checkAchievements() async {
+  Future<void> checkAchievements() async {
     bool newlyUnlocked = false;
     final prefs = await SharedPreferences.getInstance();
 
@@ -362,7 +421,8 @@ class TrainerProvider extends ChangeNotifier {
     }
 
     if (_steps >= 1000) unlock('first_steps', 50);
-    if (_caughtPokemonMap.isNotEmpty) unlock('first_catch', 50);
+    // DÜZELTME: Başlangıç partneri first_catch açmaz, gerçek yakalama şarttır
+    if (_hasCaughtWildPokemon) unlock('first_catch', 50);
     if (_streak >= 7) unlock('getting_serious', 100);
     if (_bestDailySteps >= 10000) unlock('long_walker', 100);
     if (_caughtPokemonMap.length >= 25) unlock('collector', 150);
@@ -377,6 +437,8 @@ class TrainerProvider extends ChangeNotifier {
     }
   }
 
+  /// DÜZELTME: Evrimleştiğinde eski Pokémon koleksiyondan SİLİNMEZ!
+  /// Eski tür Pokédex'te korunur, yeni evrim türü koleksiyona eklenir ve aktif partner yapılır.
   bool triggerManualEvolution() {
     final partner = activePartner;
     if (partner == null) return false;
@@ -390,22 +452,27 @@ class TrainerProvider extends ChangeNotifier {
           int nextEvolutionId = evolutionRules[requiredLevel]!;
 
           if (_partnerId != nextEvolutionId) {
-            final oldPokemon = _caughtPokemonMap.remove(_partnerId);
-            _partnerId = nextEvolutionId;
+            final existingEvolved = _caughtPokemonMap[nextEvolutionId];
 
-            _caughtPokemonMap[_partnerId] = CaughtPokemon(
-              id: _partnerId,
-              level: oldPokemon?.level ?? currentLevel,
-              xp: oldPokemon?.xp ?? 0,
-              friendshipPoints: oldPokemon?.friendshipPoints ?? 20,
-              stepsWalked: oldPokemon?.stepsWalked ?? 0,
-              caughtAt: oldPokemon?.caughtAt ?? DateTime.now(),
-              caughtLocation: oldPokemon?.caughtLocation,
+            // Eski Pokémon (_caughtPokemonMap[_partnerId]) silinmez, Pokédex'te kalır!
+            _caughtPokemonMap[nextEvolutionId] = CaughtPokemon(
+              id: nextEvolutionId,
+              level: existingEvolved != null && existingEvolved.level > partner.level
+                  ? existingEvolved.level
+                  : partner.level,
+              xp: partner.xp,
+              friendshipPoints: partner.friendshipPoints,
+              stepsWalked: partner.stepsWalked,
+              caughtAt: existingEvolved?.caughtAt ?? DateTime.now(),
+              caughtLocation: partner.caughtLocation ?? 'Evolved Partner',
             );
+
+            _partnerId = nextEvolutionId;
 
             SharedPreferences.getInstance().then((prefs) {
               prefs.setInt('partner_id', _partnerId);
               _saveDetailedPokemons(prefs);
+              checkAchievements();
             });
 
             notifyListeners();
@@ -417,17 +484,29 @@ class TrainerProvider extends ChangeNotifier {
     return false;
   }
 
-  void consumeNormalSearch() async {
+  /// Atomik Normal Arama Hakkı Tüketimi: Hak yoksa false döner, eksiye düşmez
+  bool tryConsumeNormalSearch() {
+    if (availableNormalSearches <= 0) return false;
     _usedNormalSearches++;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('used_normal_searches', _usedNormalSearches);
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('used_normal_searches', _usedNormalSearches);
+    });
     notifyListeners();
+    return true;
   }
 
-  void consumeRareSearch() async {
+  /// Atomik Nadir Arama Hakkı Tüketimi: Hak yoksa false döner, eksiye düşmez
+  bool tryConsumeRareSearch() {
+    if (availableRareSearches <= 0) return false;
     _usedRareSearches++;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('used_rare_searches', _usedRareSearches);
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('used_rare_searches', _usedRareSearches);
+    });
     notifyListeners();
+    return true;
   }
+
+  // Geriye dönük uyumluluk için korunur (içeride güvenli atomik metodu çağırır)
+  void consumeNormalSearch() => tryConsumeNormalSearch();
+  void consumeRareSearch() => tryConsumeRareSearch();
 }

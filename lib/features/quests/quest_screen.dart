@@ -9,9 +9,9 @@ class QuestScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final questProvider = context.watch<QuestProvider>();
-    final trainerProvider = context.read<TrainerProvider>();
-    final quests = questProvider.dailyQuests;
+    final questProv = context.watch<QuestProvider>();
+    final trainer = context.read<TrainerProvider>();
+    final quests = questProv.quests;
 
     return SafeArea(
       child: Padding(
@@ -22,32 +22,45 @@ class QuestScreen extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('DAILY QUESTS', style: TextStyle(color: AppColors.cream, fontSize: 14, letterSpacing: 1)),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: AppColors.blue, borderRadius: BorderRadius.circular(2)),
-                  child: const Text('RESETS DAILY', style: TextStyle(color: AppColors.navy, fontSize: 7, fontWeight: FontWeight.bold)),
+                const Text(
+                  'DAILY QUEST BOARD',
+                  style: TextStyle(
+                    color: AppColors.yellow,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  questProv.allQuestsClaimed ? 'ALL COMPLETE! ★' : 'RESETS DAILY',
+                  style: TextStyle(
+                    color: questProv.allQuestsClaimed ? AppColors.green : AppColors.blue,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
-            const Divider(color: AppColors.blue, thickness: 2, height: 16),
-            const Text('Complete tasks to earn XP and power up your partner.', style: TextStyle(color: AppColors.blue, fontSize: 8)),
             const SizedBox(height: 16),
             Expanded(
-              child: ListView.builder(
+              child: ListView.separated(
                 itemCount: quests.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
-                  final quest = quests[index];
-                  final bool isCompleted = quest.progress >= quest.target;
-                  double progressValue = (quest.progress / quest.target).clamp(0.0, 1.0);
+                  final q = quests[index];
+                  // DÜZELTME (Madde 1): .toDouble() ile kesin double dönüşümü
+                  final double progress =
+                      (q.target > 0 ? (q.current / q.target) : 0.0)
+                          .clamp(0.0, 1.0)
+                          .toDouble();
 
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: AppColors.darkBlue,
                       border: Border.all(
-                        color: quest.isClaimed ? AppColors.navy : (isCompleted ? AppColors.green : AppColors.blue), 
+                        color: q.isClaimed
+                            ? AppColors.blue
+                            : (q.isCompleted ? AppColors.green : AppColors.cream),
                         width: 2,
                       ),
                     ),
@@ -59,41 +72,102 @@ class QuestScreen extends StatelessWidget {
                           children: [
                             Flexible(
                               child: Text(
-                                quest.title, 
-                                style: TextStyle(color: quest.isClaimed ? AppColors.blue : AppColors.cream, fontSize: 10, fontWeight: FontWeight.bold),
-                                overflow: TextOverflow.ellipsis,
+                                q.title.toUpperCase(),
+                                style: TextStyle(
+                                  color: q.isClaimed ? AppColors.blue : AppColors.cream,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                            Text('+${quest.rewardXp} XP', style: const TextStyle(color: AppColors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              color: AppColors.navy,
+                              child: Text(
+                                '+${q.rewardXp} XP',
+                                style: const TextStyle(
+                                  color: AppColors.yellow,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         LinearProgressIndicator(
-                          value: progressValue,
-                          minHeight: 6,
+                          value: progress,
+                          minHeight: 8,
                           backgroundColor: AppColors.navy,
-                          valueColor: AlwaysStoppedAnimation<Color>(quest.isClaimed ? AppColors.blue : (isCompleted ? AppColors.green : AppColors.yellow)),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            q.isClaimed ? AppColors.blue : AppColors.green,
+                          ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Progress: ${quest.progress} / ${quest.target}', style: const TextStyle(color: AppColors.blue, fontSize: 8)),
-                            if (quest.isClaimed)
-                              const Text('CLAIMED ✓', style: TextStyle(color: AppColors.blue, fontSize: 8, fontWeight: FontWeight.bold))
-                            else if (isCompleted)
+                            Text(
+                              '${q.current} /${q.target}',
+                              style: const TextStyle(color: AppColors.cream, fontSize: 8),
+                            ),
+                            if (q.isClaimed)
+                              const Text(
+                                '✓ CLAIMED',
+                                style: TextStyle(
+                                  color: AppColors.blue,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            else if (q.isCompleted)
                               GestureDetector(
-                               onTap: () {
-                                questProvider.claimReward(quest.id, trainerProvider);
-                               },
+                                onTap: () async {
+                                  final success =
+                                      await questProv.claimReward(q.id, trainer);
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        success
+                                            ? '★ QUEST REWARD CLAIMED! +${q.rewardXp} XP'
+                                            : 'Reward already claimed or unavailable.',
+                                        style: const TextStyle(
+                                          color: AppColors.navy,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      backgroundColor:
+                                          success ? AppColors.green : AppColors.yellow,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(color: AppColors.green, border: Border.all(color: AppColors.green, width: 1)),
-                                  child: const Text('CLAIM', style: TextStyle(color: AppColors.navy, fontSize: 8, fontWeight: FontWeight.bold)),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.green,
+                                    border: Border.all(color: AppColors.cream, width: 1.5),
+                                  ),
+                                  child: const Text(
+                                    'CLAIM REWARD',
+                                    style: TextStyle(
+                                      color: AppColors.navy,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               )
                             else
-                              const Text('IN PROGRESS', style: TextStyle(color: AppColors.yellow, fontSize: 8)),
+                              const Text(
+                                'IN PROGRESS',
+                                style: TextStyle(color: AppColors.yellow, fontSize: 8),
+                              ),
                           ],
                         ),
                       ],
