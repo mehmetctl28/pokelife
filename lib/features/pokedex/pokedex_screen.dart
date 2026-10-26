@@ -17,6 +17,7 @@ class PokedexScreen extends StatefulWidget {
 class _PokedexScreenState extends State<PokedexScreen> {
   String _selectedFilter = 'ALL';
 
+  // DÜZELTME (Madde 8.3): FAIRY ve STEEL dahil tüm Kanto tür filtreleri eklendi
   static const List<String> _filters = [
     'ALL',
     'CAUGHT',
@@ -35,6 +36,8 @@ class _PokedexScreenState extends State<PokedexScreen> {
     'GHOST',
     'ICE',
     'DRAGON',
+    'FAIRY',
+    'STEEL',
   ];
 
   List<int> _getFilteredPokemonIds(TrainerProvider trainer) {
@@ -50,6 +53,24 @@ class _PokedexScreenState extends State<PokedexScreen> {
       final type = PokemonData.getType(id).toUpperCase();
       return type.contains(_selectedFilter);
     }).toList();
+  }
+
+  /// DÜZELTME (Madde 9.2): O ana kadar açılmış tüm birikimli (kümülatif) arkadaşlık bonuslarını döndürür
+  List<String> _getActivePerksList(int hearts) {
+    final List<String> perks = ['❤️1 Starter Bond: +10% Partner XP'];
+    if (hearts >= 2) {
+      perks.add('❤️2 Scout Bond: +15% Rare Encounter Synergy');
+    }
+    if (hearts >= 3) {
+      perks.add('❤️3 Energy Saver: Search Cost Reduced to 4,500 Steps');
+    }
+    if (hearts >= 4) {
+      perks.add('❤️4 Lucky Find: +10 Bonus XP per Catch');
+    }
+    if (hearts >= 5) {
+      perks.add('❤️5 Best Buddy: +25% Total Trainer & Partner XP');
+    }
+    return perks;
   }
 
   String _getFieldNote(CaughtPokemon caught) {
@@ -72,7 +93,7 @@ class _PokedexScreenState extends State<PokedexScreen> {
             final CaughtPokemon? caughtData = trainer.caughtPokemons[pokemonId];
             final bool isCaught = caughtData != null;
 
-            // DÜZELTME (Madde 9.1): Yakalanmamış Pokémonların bilgileri gizlenir!
+            // Yakalanmamış Pokémonların bilgileri gizlenir
             if (!isCaught) {
               return Dialog(
                 backgroundColor: AppColors.darkBlue,
@@ -120,7 +141,7 @@ class _PokedexScreenState extends State<PokedexScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        ' Type: UNKNOWN\nHabitat: Explore Kanto regions and battle wild Pokémon to unlock this Pokédex entry.',
+                        'Type: UNKNOWN\nHabitat: Explore Kanto regions and battle wild Pokémon to unlock this Pokédex entry.',
                         style: TextStyle(color: AppColors.blue, fontSize: 8, height: 1.4),
                         textAlign: TextAlign.center,
                       ),
@@ -163,6 +184,12 @@ class _PokedexScreenState extends State<PokedexScreen> {
                 .clamp(0.0, 1.0)
                 .toDouble();
 
+            final int hearts = caughtData.friendshipHearts;
+            final int nextHeartThreshold = (hearts < 5) ? ((hearts + 1) * 20) : 100;
+            final int pointsToNextHeart =
+                (nextHeartThreshold - caughtData.friendshipPoints).clamp(0, 100).toInt();
+            final List<String> activePerks = _getActivePerksList(hearts);
+
             return Dialog(
               backgroundColor: AppColors.darkBlue,
               shape: Border.all(
@@ -180,7 +207,7 @@ class _PokedexScreenState extends State<PokedexScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            '#${pokemonId.toString().padLeft(3, '0')} $name',
+                            '#${pokemonId.toString().padLeft(3, '0')}$name',
                             style: const TextStyle(
                               color: AppColors.yellow,
                               fontSize: 10.5,
@@ -237,15 +264,22 @@ class _PokedexScreenState extends State<PokedexScreen> {
                               ),
                               const SizedBox(height: 5),
                               Text(
-                                'BOND: ${"❤️" * caughtData.friendshipHearts} (${caughtData.friendshipPoints}/100)',
+                                'BOND: ${"❤️" * hearts} (${caughtData.friendshipPoints}/100)',
                                 style: const TextStyle(color: AppColors.yellow, fontSize: 7.5),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                hearts >= 5
+                                    ? 'MAX BOND REACHED!'
+                                    : 'Next Heart in $pointsToNextHeart pts',
+                                style: const TextStyle(color: AppColors.blue, fontSize: 6.5),
                               ),
                               const SizedBox(height: 5),
                               Text(
                                 'STEPS WALKED: ${caughtData.stepsWalked}',
                                 style: const TextStyle(color: AppColors.green, fontSize: 7.5),
                               ),
-                              const SizedBox(height: 5),
+                              const SizedBox(height: 4),
                               Text(
                                 'MET AT: ${(caughtData.caughtLocation ?? "Kanto Starter").toUpperCase()}',
                                 style: const TextStyle(color: AppColors.blue, fontSize: 7),
@@ -257,7 +291,7 @@ class _PokedexScreenState extends State<PokedexScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Partner XP İlerleme Çubuğu (.toDouble() ile tip güvenli)
+                    // Partner XP İlerleme Çubuğu
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -266,7 +300,7 @@ class _PokedexScreenState extends State<PokedexScreen> {
                           style: TextStyle(color: AppColors.yellow, fontSize: 7.5),
                         ),
                         Text(
-                          '${caughtData.xp} / ${caughtData.nextLevelXp} XP',
+                          '${caughtData.xp} /${caughtData.nextLevelXp} XP',
                           style: const TextStyle(color: AppColors.cream, fontSize: 7.5),
                         ),
                       ],
@@ -280,7 +314,7 @@ class _PokedexScreenState extends State<PokedexScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Aktif Arkadaşlık Perk Bilgisi
+                    // Aktif Arkadaşlık Perk Listesi (Madde 8.4 & 9.2)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(8),
@@ -291,18 +325,32 @@ class _PokedexScreenState extends State<PokedexScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            caughtData.activePerkDescription,
-                            style: const TextStyle(
-                              color: AppColors.green,
+                          const Text(
+                            'ACTIVE BOND PERKS:',
+                            style: TextStyle(
+                              color: AppColors.yellow,
                               fontSize: 7.5,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 4),
+                          ...activePerks.map(
+                            (perk) => Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                perk,
+                                style: const TextStyle(
+                                  color: AppColors.green,
+                                  fontSize: 7,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
                           Text(
                             _getFieldNote(caughtData),
-                            style: const TextStyle(color: AppColors.cream, fontSize: 7),
+                            style: const TextStyle(color: AppColors.cream, fontSize: 6.5),
                           ),
                         ],
                       ),
@@ -335,20 +383,20 @@ class _PokedexScreenState extends State<PokedexScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // DÜZELTME (Madde 4): KULLANILABİLİR EVRİM BUTONU!
+                    // KULLANILABİLİR EVRİM BUTONU
                     if (canEvolveThisPokemon) ...[
                       GestureDetector(
-                        onTap: () {
+                        onTap: () async {
                           if (!isCurrentPartner) {
-                            trainer.setPartner(pokemonId);
+                            await trainer.setPartner(pokemonId);
                           }
                           final bool success = trainer.triggerManualEvolution();
-                          if (success) {
+                          if (success && context.mounted) {
                             Navigator.pop(dialogCtx);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  '✨ CONGRATULATIONS! Your $name evolved into $targetEvoName!',
+                                  '✨ CONGRATULATIONS! Your $name evolved into$targetEvoName!',
                                   style: const TextStyle(
                                     color: AppColors.navy,
                                     fontSize: 9,
@@ -389,9 +437,11 @@ class _PokedexScreenState extends State<PokedexScreen> {
                         if (!isCurrentPartner) ...[
                           Expanded(
                             child: GestureDetector(
-                              onTap: () {
-                                trainer.setPartner(pokemonId);
-                                Navigator.pop(dialogCtx);
+                              onTap: () async {
+                                await trainer.setPartner(pokemonId);
+                                if (dialogCtx.mounted) {
+                                  Navigator.pop(dialogCtx);
+                                }
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -450,7 +500,6 @@ class _PokedexScreenState extends State<PokedexScreen> {
     final caughtIds = trainer.caughtPokemonIds;
     final filteredIds = _getFilteredPokemonIds(trainer);
 
-    // DÜZELTME (Madde 1): İlerleme çubuğuna .toDouble() ile kesin double verilir
     final double completionRatio = (caughtIds.length / 151.0).clamp(0.0, 1.0).toDouble();
 
     return SafeArea(
@@ -459,7 +508,6 @@ class _PokedexScreenState extends State<PokedexScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Başlık ve Tamamlanma Oranı
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -490,7 +538,6 @@ class _PokedexScreenState extends State<PokedexScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Eğer aktif partner evrimleşmeye hazırsa hızlı bildirim bandı!
             if (trainer.canEvolvePartner && trainer.activePartner != null)
               GestureDetector(
                 onTap: () => _showPokemonDetails(context, trainer.partnerId),
@@ -529,13 +576,12 @@ class _PokedexScreenState extends State<PokedexScreen> {
                 ),
               ),
 
-            // Genişletilmiş Kanto Tür Filtreleri
             SizedBox(
               height: 30,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: _filters.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
                 itemBuilder: (context, index) {
                   final filter = _filters[index];
                   final isSelected = _selectedFilter == filter;
@@ -567,7 +613,6 @@ class _PokedexScreenState extends State<PokedexScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Pokémon Izgarası (Grid)
             Expanded(
               child: filteredIds.isEmpty
                   ? const Center(

@@ -57,6 +57,7 @@ class _BattleScreenState extends State<BattleScreen> {
   late int _enemyHp;
 
   late List<BattleMove> _moves;
+  int _healsRemaining = 2; // DÜZELTME (Madde 2.C): Savaş başına maksimum 2 Morning Sun hakkı
 
   BattleMenuState _menuState = BattleMenuState.busy;
   String _battleLog = '';
@@ -95,6 +96,8 @@ class _BattleScreenState extends State<BattleScreen> {
     _playerHp = _playerMaxHp;
 
     _moves = BattleEngine.buildMovesForType(_partnerType);
+    final healMove = _moves.where((m) => m.isHeal).firstOrNull;
+    _healsRemaining = healMove?.maxUses ?? 2;
 
     if (_isGymBattle) {
       final firstPoke = widget.gymLeader!.team.first;
@@ -126,7 +129,8 @@ class _BattleScreenState extends State<BattleScreen> {
       await Future.delayed(const Duration(milliseconds: 1500));
       if (!mounted) return;
       setState(() {
-        _battleLog = '${leader.title} ${leader.leaderName} sent out $_wildName (Lv.$_currentEnemyLevel)!';
+        _battleLog =
+            '${leader.title} ${leader.leaderName} sent out $_wildName (Lv.$_currentEnemyLevel)!';
       });
     } else {
       setState(() {
@@ -155,19 +159,40 @@ class _BattleScreenState extends State<BattleScreen> {
 
   Future<void> _executePlayerMove(BattleMove move) async {
     if (_menuState == BattleMenuState.busy) return;
-    setState(() => _menuState = BattleMenuState.busy);
 
+    // DÜZELTME (Madde 2.C): Morning Sun kullanım sınırı kontrolü
     if (move.isHeal) {
-      final healAmount = BattleEngine.calculateHealAmount(_playerMaxHp, 0.35);
+      if (_healsRemaining <= 0) {
+        setState(() {
+          _battleLog = 'No uses left for ${move.name} in this battle!';
+        });
+        return;
+      }
+      if (_playerHp >= _playerMaxHp) {
+        setState(() {
+          _battleLog = '$_partnerName\'s HP is already full!';
+        });
+        return;
+      }
+
+      setState(() => _menuState = BattleMenuState.busy);
+      final int healAmount = BattleEngine.calculateHealAmount(_playerMaxHp, 0.35);
+      final int newHp = (_playerHp + healAmount).clamp(1, _playerMaxHp).toInt();
+      final int actualRestored = newHp - _playerHp;
+
       setState(() {
-        _playerHp = (_playerHp + healAmount).clamp(1, _playerMaxHp);
-        _battleLog = '$_partnerName used ${move.name}! Restored $healAmount HP!';
+        _healsRemaining--;
+        _playerHp = newHp;
+        _battleLog =
+            '$_partnerName used ${move.name}! Restored $actualRestored HP! ($_healsRemaining left)';
       });
       await Future.delayed(const Duration(milliseconds: 1100));
       if (!mounted) return;
       await _executeEnemyTurn();
       return;
     }
+
+    setState(() => _menuState = BattleMenuState.busy);
 
     // Saldırı Hamlesi Animasyonu
     setState(() {
@@ -208,7 +233,9 @@ class _BattleScreenState extends State<BattleScreen> {
 
     setState(() {
       _enemyHp = outcome.remainingEnemyHp;
-      if (outcome.triggeredFalseSwipe) {
+      if (outcome.isNoEffect) {
+        _battleLog = "It doesn't affect $_wildName... (0 HP)";
+      } else if (outcome.triggeredFalseSwipe) {
         _battleLog = '$_wildName held on with 1 HP! Catch chance is now 100%!';
       } else if (outcome.isSuperEffective) {
         _battleLog = "It's super effective! (-${outcome.damageDealt} HP)";
@@ -254,10 +281,12 @@ class _BattleScreenState extends State<BattleScreen> {
       wildLevel: _currentEnemyLevel,
       randomBonus: _rng.nextInt(5),
     );
+    final int newPlayerHp = (_playerHp - dmg).clamp(0, _playerMaxHp).toInt();
+    final int actualPlayerDmg = _playerHp - newPlayerHp;
 
     setState(() {
-      _playerHp = (_playerHp - dmg).clamp(0, _playerMaxHp);
-      _battleLog = '$_partnerName took $dmg damage!';
+      _playerHp = newPlayerHp;
+      _battleLog = '$_partnerName took $actualPlayerDmg damage!';
     });
 
     await Future.delayed(const Duration(milliseconds: 1000));
@@ -268,9 +297,9 @@ class _BattleScreenState extends State<BattleScreen> {
         _battleLog = '$_partnerName is exhausted! You safely retreated to Camp.';
         _menuState = BattleMenuState.finished;
       });
-      await Future.delayed(const Duration(milliseconds: 1500));
+      await Future.delayed(const Duration(milliseconds: 1400));
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context, '$_partnerName rested at Camp after the battle.');
       return;
     }
 
@@ -291,11 +320,13 @@ class _BattleScreenState extends State<BattleScreen> {
         _battleLog = 'Used RAZZ BERRY! Wild $_wildName is easier to catch!';
       });
     } else {
-      final heal = BattleEngine.calculateHealAmount(_playerMaxHp, 0.45);
+      final int heal = BattleEngine.calculateHealAmount(_playerMaxHp, 0.45);
+      final int newHp = (_playerHp + heal).clamp(1, _playerMaxHp).toInt();
+      final int actualRestored = newHp - _playerHp;
       setState(() {
         _oranBerriesLeft--;
-        _playerHp = (_playerHp + heal).clamp(1, _playerMaxHp);
-        _battleLog = 'Fed ORAN BERRY to $_partnerName! Restored $heal HP!';
+        _playerHp = newHp;
+        _battleLog = 'Fed ORAN BERRY to $_partnerName! Restored $actualRestored HP!';
       });
     }
 
@@ -307,10 +338,10 @@ class _BattleScreenState extends State<BattleScreen> {
   Future<void> _throwPokeball() async {
     if (_menuState == BattleMenuState.busy) return;
 
-    // Gym Savaşında Pokéball Engeli
     if (_isGymBattle) {
       setState(() {
-        _battleLog = '${widget.gymLeader!.leaderName}: "Hey! You can\'t catch another Trainer\'s Pokémon!"';
+        _battleLog =
+            '${widget.gymLeader!.leaderName}: "Hey! You can\'t catch another Trainer\'s Pokémon!"';
       });
       return;
     }
@@ -342,23 +373,24 @@ class _BattleScreenState extends State<BattleScreen> {
       final trainerProv = context.read<TrainerProvider>();
       final questProv = context.read<QuestProvider>();
 
-      final bool isNew = await trainerProv.catchPokemon(
-        _currentEnemyPokemonId,
-        wildLevel: _currentEnemyLevel,
-        location: widget.region.name,
-      );
-
+      // DÜZELTME (Madde 2.D): XP tek bir yerde (BattleEngine.calculateCatchXp) hesaplanır
       final int xpGained = BattleEngine.calculateCatchXp(
-        isNew: isNew,
+        isNew: !trainerProv.caughtPokemonIds.contains(_currentEnemyPokemonId),
         isRare: widget.isRare,
         partnerHearts: _partnerHearts,
         enemyHp: _enemyHp,
         enemyMaxHp: _enemyMaxHp,
       );
 
+      final bool isNew = await trainerProv.catchPokemon(
+        _currentEnemyPokemonId,
+        wildLevel: _currentEnemyLevel,
+        location: widget.region.name,
+      );
+
       await trainerProv.addXp(xpGained);
       if (isNew) {
-        questProv.addCatchProgress();
+        await questProv.addCatchProgress();
       }
 
       if (!mounted) return;
@@ -367,26 +399,15 @@ class _BattleScreenState extends State<BattleScreen> {
         _menuState = BattleMenuState.finished;
       });
 
-      await Future.delayed(const Duration(milliseconds: 1400));
+      await Future.delayed(const Duration(milliseconds: 1300));
       if (!mounted) return;
-      Navigator.pop(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isNew
-                ? '★ NEW DEX ENTRY! $_wildName (Lv.$_currentEnemyLevel) caught! +$xpGained XP'
-                : 'CAUGHT $_wildName! +$xpGained XP',
-            style: const TextStyle(
-              fontSize: 9.5,
-              color: AppColors.navy,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          backgroundColor: AppColors.green,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      final String resultBanner = isNew
+          ? '★ NEW DEX ENTRY! $_wildName (Lv.$_currentEnemyLevel) caught! +$xpGained XP'
+          : 'CAUGHT $_wildName! +$xpGained XP';
+
+      // DÜZELTME (Madde 2.B): SnackBar burada değil, mesaj döndürülerek WalkScreen'de gösterilir!
+      Navigator.pop(context, resultBanner);
     } else {
       setState(() {
         _isShowingPokeball = false;
@@ -400,7 +421,6 @@ class _BattleScreenState extends State<BattleScreen> {
   }
 
   Future<void> _handleEnemyFainted() async {
-    // EĞER GYM SAVAŞIYSA VE LİDERİN SIRADAKİ POKÉMON'U VARSA:
     if (_isGymBattle) {
       final leader = widget.gymLeader!;
       if (_currentGymRosterIndex + 1 < leader.team.length) {
@@ -414,7 +434,8 @@ class _BattleScreenState extends State<BattleScreen> {
         final nextPoke = leader.team[_currentGymRosterIndex];
         setState(() {
           _loadEnemyPokemon(nextPoke.id, nextPoke.level, isBoss: true);
-          _battleLog = '${leader.leaderName} sent out $_wildName (Lv.$_currentEnemyLevel)!';
+          _battleLog =
+              '${leader.leaderName} sent out $_wildName (Lv.$_currentEnemyLevel)!';
         });
 
         await Future.delayed(const Duration(milliseconds: 1200));
@@ -426,38 +447,31 @@ class _BattleScreenState extends State<BattleScreen> {
         return;
       }
 
-      // GYM LİDERİNİN TÜM POKÉMONLARI YENİLDİ! ROZET KAZANILDI!
+      // DÜZELTME (Madde 3.1): İlk zaferde tam ödül + rozet; tekrar savaşında (rematch) 0 XP (sonsuz XP farm engeli)
       final trainerProv = context.read<TrainerProvider>();
       final bool isFirstTimeBadge = await GymData.unlockBadge(leader.badgeId);
-      final int rewardXp = isFirstTimeBadge ? leader.rewardXp : (leader.rewardXp ~/ 2);
-      await trainerProv.addXp(rewardXp);
+      final int rewardXp = isFirstTimeBadge ? leader.rewardXp : 0;
+
+      if (rewardXp > 0) {
+        await trainerProv.addXp(rewardXp);
+      }
 
       if (!mounted) return;
       setState(() {
-        _battleLog = '${leader.leaderName}: "${leader.defeatQuote}" (+$rewardXp XP)';
+        _battleLog = isFirstTimeBadge
+            ? '${leader.leaderName}: "${leader.defeatQuote}" (+$rewardXp XP)'
+            : '${leader.leaderName}: "${leader.defeatQuote}" (Rematch Victory!)';
         _menuState = BattleMenuState.finished;
       });
 
-      await Future.delayed(const Duration(milliseconds: 2000));
+      await Future.delayed(const Duration(milliseconds: 1800));
       if (!mounted) return;
-      Navigator.pop(context, true);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isFirstTimeBadge
-                ? '${leader.badgeEmoji} OBTAINED ${leader.badgeName.toUpperCase()}! (${leader.perkDescription}) +$rewardXp XP'
-                : '${leader.badgeEmoji} DEFEATED GYM LEADER ${leader.leaderName}! +$rewardXp XP',
-            style: const TextStyle(
-              fontSize: 9.5,
-              color: AppColors.navy,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          backgroundColor: AppColors.yellow,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      final String gymResultBanner = isFirstTimeBadge
+          ? '${leader.badgeEmoji} OBTAINED ${leader.badgeName.toUpperCase()}! (${leader.perkDescription}) +$rewardXp XP'
+          : '${leader.badgeEmoji} REMATCH VICTORY AGAINST ${leader.leaderName}! (Badge already earned)';
+
+      Navigator.pop(context, gymResultBanner);
       return;
     }
 
@@ -475,23 +489,12 @@ class _BattleScreenState extends State<BattleScreen> {
       _menuState = BattleMenuState.finished;
     });
 
-    await Future.delayed(const Duration(milliseconds: 1500));
+    await Future.delayed(const Duration(milliseconds: 1400));
     if (!mounted) return;
-    Navigator.pop(context);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'VICTORY! Defeated wild $_wildName! +$victoryXp XP (Tip: Use FALSE SWIPE to catch safely)',
-          style: const TextStyle(
-            fontSize: 9,
-            color: AppColors.navy,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        backgroundColor: AppColors.yellow,
-        duration: const Duration(seconds: 3),
-      ),
+    Navigator.pop(
+      context,
+      'VICTORY! Defeated wild $_wildName! +$victoryXp XP (Tip: Use FALSE SWIPE to catch safely)',
     );
   }
 
@@ -510,7 +513,6 @@ class _BattleScreenState extends State<BattleScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ÜST BAR: Bölge / Gym Lideri ve Takım veya Yakalama Rozeti
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -530,7 +532,7 @@ class _BattleScreenState extends State<BattleScreen> {
                       Text(_isGymBattle ? '🏅 ' : '⚔️ ', style: const TextStyle(fontSize: 12)),
                       Text(
                         _isGymBattle
-                            ? 'GYM LEADER ${widget.gymLeader!.leaderName}'
+                            ? '${widget.gymLeader!.title.toUpperCase()} ${widget.gymLeader!.leaderName}'
                             : widget.region.name.toUpperCase(),
                         style: TextStyle(
                           color: _isGymBattle ? AppColors.yellow : AppColors.cream,
@@ -640,7 +642,9 @@ class _BattleScreenState extends State<BattleScreen> {
                               color: AppColors.darkBlue,
                               borderRadius: BorderRadius.circular(50),
                               border: Border.all(
-                                color: _isGymBattle || widget.isRare ? AppColors.yellow : AppColors.blue,
+                                color: _isGymBattle || widget.isRare
+                                    ? AppColors.yellow
+                                    : AppColors.blue,
                                 width: 2,
                               ),
                             ),
@@ -734,7 +738,8 @@ class _BattleScreenState extends State<BattleScreen> {
   }
 
   Widget _buildEnemyHud() {
-    final double ratio = (_enemyHp / _enemyMaxHp).clamp(0.0, 1.0);
+    // DÜZELTME (Madde 2.A): .toDouble() ile tip güvenli
+    final double ratio = (_enemyHp / _enemyMaxHp).clamp(0.0, 1.0).toDouble();
     return Container(
       width: 175,
       padding: const EdgeInsets.all(8),
@@ -833,7 +838,8 @@ class _BattleScreenState extends State<BattleScreen> {
   }
 
   Widget _buildPlayerHud() {
-    final double ratio = (_playerHp / _playerMaxHp).clamp(0.0, 1.0);
+    // DÜZELTME (Madde 2.A): .toDouble() ile tip güvenli
+    final double ratio = (_playerHp / _playerMaxHp).clamp(0.0, 1.0).toDouble();
     return Container(
       width: 180,
       padding: const EdgeInsets.all(8),
@@ -906,7 +912,11 @@ class _BattleScreenState extends State<BattleScreen> {
                   if (_earnedBadgeCount > 0)
                     Text(
                       ' +${_earnedBadgeCount * 5}%⚔️',
-                      style: const TextStyle(color: AppColors.yellow, fontSize: 6.5, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: AppColors.yellow,
+                        fontSize: 6.5,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                 ],
               ),
@@ -1183,50 +1193,58 @@ class _BattleScreenState extends State<BattleScreen> {
 
   Widget _buildMoveButton(BattleMove move) {
     final bool isFalseSwipe = move.isFalseSwipe && !_isGymBattle;
-    final Color borderCol = isFalseSwipe
-        ? AppColors.yellow
-        : (move.isHeal ? AppColors.green : AppColors.cream);
+    final bool isDisabledHeal = move.isHeal && _healsRemaining <= 0;
+    final Color borderCol = isDisabledHeal
+        ? AppColors.blue
+        : (isFalseSwipe
+            ? AppColors.yellow
+            : (move.isHeal ? AppColors.green : AppColors.cream));
 
     return GestureDetector(
-      onTap: () => _executePlayerMove(move),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.darkBlue,
-          border: Border.all(color: borderCol, width: 1.5),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Flexible(
-                  child: Text(
-                    move.name,
-                    style: TextStyle(
-                      color: borderCol,
-                      fontSize: 8.5,
-                      fontWeight: FontWeight.bold,
+      onTap: isDisabledHeal ? null : () => _executePlayerMove(move),
+      child: Opacity(
+        opacity: isDisabledHeal ? 0.45 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.darkBlue,
+            border: Border.all(color: borderCol, width: 1.5),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Flexible(
+                    child: Text(
+                      move.name,
+                      style: TextStyle(
+                        color: borderCol,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Text(
-                  move.isHeal ? 'HEAL' : 'PWR ${move.power}',
-                  style: const TextStyle(color: AppColors.blue, fontSize: 7),
-                ),
-              ],
-            ),
-            const SizedBox(height: 3),
-            Text(
-              move.description,
-              style: const TextStyle(color: AppColors.cream, fontSize: 6.5),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+                  Text(
+                    move.isHeal
+                        ? 'HEAL ($_healsRemaining/${move.maxUses ?? 2})'
+                        : 'PWR ${move.power}',
+                    style: const TextStyle(color: AppColors.blue, fontSize: 7),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(
+                move.description,
+                style: const TextStyle(color: AppColors.cream, fontSize: 6.5),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );

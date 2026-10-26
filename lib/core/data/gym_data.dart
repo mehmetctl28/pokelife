@@ -33,20 +33,31 @@ class GymLeader {
     required this.rewardXp,
     required this.team,
   });
+
+  /// DÜZELTME (Madde 3.4): Liderin takımındaki en güçlü Pokémon'a göre önerilen partner seviyesi
+  int get recommendedLevel {
+    if (team.isEmpty) return 5;
+    int maxLvl = team.first.level;
+    for (final p in team) {
+      if (p.level > maxLvl) maxLvl = p.level;
+    }
+    return maxLvl;
+  }
 }
 
 class GymData {
   static const String _prefsKey = 'earned_gym_badges';
 
+  /// DÜZELTME (Madde 3.2): Lider unvanları ve hikâyeleri WorldData bölgeleriyle birebir uyumlu hale getirildi
   static const List<GymLeader> leaders = [
     GymLeader(
       regionId: 'route_1',
       leaderName: 'JOEY',
-      title: 'Rookie Ace Trainer',
+      title: 'Route 1 Rookie Challenge',
       badgeId: 'rookie_badge',
-      badgeName: 'Rookie Badge',
+      badgeName: 'Rookie Emblem',
       badgeEmoji: '🎗️',
-      introQuote: 'My Rattata is in the top percentage! Show me your steps!',
+      introQuote: 'My Rattata is in the top percentage on Route 1! Show me your steps!',
       defeatQuote: 'Whoa! Your partner bond is way stronger than I expected!',
       perkDescription: '+5% Attack DMG & +3% Catch Rate',
       rewardXp: 120,
@@ -58,12 +69,12 @@ class GymData {
     GymLeader(
       regionId: 'viridian_forest',
       leaderName: 'BROCK',
-      title: 'Pewter Gym Leader',
+      title: 'Viridian-Pewter Vanguard',
       badgeId: 'boulder_badge',
       badgeName: 'Boulder Badge',
       badgeEmoji: '🪨',
-      introQuote: 'My rock-hard willpower is evident in my Pokémon! Ready?',
-      defeatQuote: 'I took you for granted. Take the official BOULDER BADGE!',
+      introQuote: 'I guard the northern exit of Viridian Forest toward Pewter City! Ready?',
+      defeatQuote: 'Your willpower is rock-solid! Take the official BOULDER BADGE!',
       perkDescription: '+5% Attack DMG & +3% Catch Rate',
       rewardXp: 200,
       team: [
@@ -74,12 +85,12 @@ class GymData {
     GymLeader(
       regionId: 'mt_moon',
       leaderName: 'MISTY',
-      title: 'Cerulean Gym Leader',
+      title: 'Mt. Moon-Cerulean Leader',
       badgeId: 'cascade_badge',
       badgeName: 'Cascade Badge',
       badgeEmoji: '💧',
-      introQuote: 'My policy is an all-out offensive with Water-type Pokémon!',
-      defeatQuote: 'Wow! You are too much! You earned the CASCADE BADGE!',
+      introQuote: 'Crossing Mt. Moon toward Cerulean? My Water-types will test you first!',
+      defeatQuote: 'Wow! You conquered the mountain pass! Here is the CASCADE BADGE!',
       perkDescription: '+5% Attack DMG & +3% Catch Rate',
       rewardXp: 300,
       team: [
@@ -90,12 +101,12 @@ class GymData {
     GymLeader(
       regionId: 'cerulean_city',
       leaderName: 'LT. SURGE',
-      title: 'Vermilion Gym Leader',
+      title: 'Cerulean Cape Commander',
       badgeId: 'thunder_badge',
       badgeName: 'Thunder Badge',
       badgeEmoji: '⚡',
-      introQuote: 'Hey kid! My electric Pokémon saved me! They will zap you!',
-      defeatQuote: 'Whoa! You are the real deal! Take the THUNDER BADGE!',
+      introQuote: 'At Cerulean Cape, my electric Pokémon will zap anyone who slacks off!',
+      defeatQuote: 'Whoa! You walked the distance, kid! Take the THUNDER BADGE!',
       perkDescription: '+5% Attack DMG & +3% Catch Rate',
       rewardXp: 400,
       team: [
@@ -105,15 +116,14 @@ class GymData {
     ),
   ];
 
-  /// Bölgeye göre Gym Liderini döndürür (Tanımsız bölgeler için dinamik lider üretir)
   static GymLeader getLeaderForRegion(String regionId, String regionName) {
     for (final leader in leaders) {
       if (leader.regionId == regionId) return leader;
     }
     return GymLeader(
       regionId: regionId,
-      leaderName: 'E4 CHALLENGER',
-      title: '$regionName Master',
+      leaderName: 'KANTO ACE',
+      title: '$regionName Guardian',
       badgeId: '${regionId}_badge',
       badgeName: '$regionName Badge',
       badgeEmoji: '🏅',
@@ -122,19 +132,27 @@ class GymData {
       perkDescription: '+5% Attack DMG & +3% Catch Rate',
       rewardXp: 350,
       team: const [
-        GymPokemon(id: 58, level: 24), // Growlithe
-        GymPokemon(id: 59, level: 28), // Arcanine
+        GymPokemon(id: 58, level: 24),
+        GymPokemon(id: 59, level: 28),
       ],
     );
   }
 
-  /// Kazanılmış rozet ID listesini yükler
+  /// DÜZELTME (Madde 3.4): Henüz kazanılmamış ilk Gym hedefini döndürür
+  static GymLeader? getNextUndefeatedLeader(List<String> earnedBadges) {
+    for (final leader in leaders) {
+      if (!earnedBadges.contains(leader.badgeId)) {
+        return leader;
+      }
+    }
+    return null;
+  }
+
   static Future<List<String>> getEarnedBadges() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getStringList(_prefsKey) ?? <String>[];
   }
 
-  /// Yeni kazanılan rozeti kaydeder. İlk kez kazanıldıysa true döner.
   static Future<bool> unlockBadge(String badgeId) async {
     final prefs = await SharedPreferences.getInstance();
     final current = prefs.getStringList(_prefsKey) ?? <String>[];

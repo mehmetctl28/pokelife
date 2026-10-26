@@ -23,9 +23,7 @@ class TrainerProvider extends ChangeNotifier {
   int _bestDailySteps = 0;
   bool _hasCaughtWildPokemon = false;
 
-  // Harita Gezginliği (Seyahat) Durumu
   String _selectedRegionId = 'route_1';
-
   List<String> _unlockedAchievements = [];
 
   int _usedNormalSearches = 0;
@@ -36,53 +34,42 @@ class TrainerProvider extends ChangeNotifier {
   int get dailySteps => _dailySteps;
   int get streak => _streak;
   List<int> get caughtPokemonIds => _caughtPokemonMap.keys.toList()..sort();
-  Map<int, CaughtPokemon> get caughtPokemons => _caughtPokemonMap;
+  Map<int, CaughtPokemon> get caughtPokemons => Map.unmodifiable(_caughtPokemonMap);
   bool get isInitialized => _isInitialized;
   int get partnerId => _partnerId;
   int get bestDailySteps => _bestDailySteps;
   bool get hasCaughtWildPokemon => _hasCaughtWildPokemon;
-  List<String> get unlockedAchievements => _unlockedAchievements;
+  List<String> get unlockedAchievements => List.unmodifiable(_unlockedAchievements);
   String get selectedRegionId => _selectedRegionId;
 
   CaughtPokemon? get activePartner => _caughtPokemonMap[_partnerId];
 
-  // Kullanıcının seçtiği bölge; eğer adım yetmiyorsa açılmış en son bölgeyi döndürür
-  Region get currentRegion {
-    final unlocked = WorldData.regions.where((r) => _steps >= r.unlockSteps).toList();
-    if (unlocked.isEmpty) return WorldData.regions.first;
-    return unlocked.firstWhere(
-      (r) => r.id == _selectedRegionId,
-      orElse: () => unlocked.last,
-    );
-  }
+  Region get currentRegion => WorldData.resolveActiveRegion(_steps, _selectedRegionId);
 
-  // Perk 2 (Scout Bond): 2+ Kalp ise normal aramada bile %15 ihtimalle nadir havuzdan Pokémon çıkabilir
   bool get hasScoutBondSynergy => (activePartner?.friendshipHearts ?? 1) >= 2;
 
-  // Perk 3 (Energy Saver): Kalp 3 ve üzeri ise arama eşiği 4.500 adıma iner
   int get _stepCostForSearch {
-    final hearts = activePartner?.friendshipHearts ?? 1;
+    final int hearts = activePartner?.friendshipHearts ?? 1;
     return hearts >= 3 ? 4500 : 5000;
   }
 
   int get availableNormalSearches {
-    final raw = (_dailySteps ~/ _stepCostForSearch) - _usedNormalSearches;
+    final int raw = (_dailySteps ~/ _stepCostForSearch) - _usedNormalSearches;
     return raw < 0 ? 0 : raw;
   }
 
   int get availableRareSearches {
-    final raw = (_dailySteps ~/ 10000) - _usedRareSearches;
+    final int raw = (_dailySteps ~/ 10000) - _usedRareSearches;
     return raw < 0 ? 0 : raw;
   }
 
-  // Aktif partnerin şu an evrimleşmeye hazır olup olmadığını kontrol eder (UI butonları için)
   bool get canEvolvePartner {
     final partner = activePartner;
     if (partner == null) return false;
     final evolutionRules = EvolutionData.evolutions[_partnerId];
     if (evolutionRules == null) return false;
     for (var requiredLevel in evolutionRules.keys) {
-      final nextId = evolutionRules[requiredLevel]!;
+      final int nextId = evolutionRules[requiredLevel]!;
       if (partner.level >= requiredLevel && _partnerId != nextId) {
         return true;
       }
@@ -169,7 +156,6 @@ class TrainerProvider extends ChangeNotifier {
       await _saveDetailedPokemons(prefs);
     }
 
-    // Başlangıç Pokémon'u dışında vahşi yakalama yapılıp yapılmadığını yükle
     _hasCaughtWildPokemon =
         prefs.getBool('has_caught_wild_pokemon') ?? (_caughtPokemonMap.length > 1);
 
@@ -196,11 +182,8 @@ class TrainerProvider extends ChangeNotifier {
     );
   }
 
-  void selectRegion(String regionId) async {
-    final region = WorldData.regions.firstWhere(
-      (r) => r.id == regionId,
-      orElse: () => WorldData.regions.first,
-    );
+  Future<void> selectRegion(String regionId) async {
+    final region = WorldData.getRegionById(regionId);
     if (_steps >= region.unlockSteps) {
       _selectedRegionId = regionId;
       final prefs = await SharedPreferences.getInstance();
@@ -209,7 +192,7 @@ class TrainerProvider extends ChangeNotifier {
     }
   }
 
-  void setPartner(int pokeId) async {
+  Future<void> setPartner(int pokeId) async {
     if (_caughtPokemonMap.containsKey(pokeId)) {
       _partnerId = pokeId;
       final prefs = await SharedPreferences.getInstance();
@@ -323,7 +306,6 @@ class TrainerProvider extends ChangeNotifier {
 
     int earnedXp = (_dailySteps ~/ 250) - (oldDaily ~/ 250);
     if (earnedXp > 0) {
-      // Perk 5 (Best Buddy): 5 kalpte Trainer XP kazanımı da +%25 bonus alır
       final int trainerEarnedXp =
           (partner != null && partner.friendshipHearts >= 5)
               ? (earnedXp * 1.25).round()
@@ -371,21 +353,15 @@ class TrainerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// DÜZELTME (Madde 2.D): Lucky Find (+10 XP) buradan kaldırıldı;
+  /// yakalama XP hesabı yalnızca BattleEngine.calculateCatchXp() üzerinden yapılır.
   Future<bool> catchPokemon(int pokeId, {int wildLevel = 5, String? location}) async {
     final prefs = await SharedPreferences.getInstance();
 
     activePartner?.addFriendshipPoints(1);
 
-    // Gerçek vahşi yakalama gerçekleşti (FIRST CATCH başarımı için)
     _hasCaughtWildPokemon = true;
     await prefs.setBool('has_caught_wild_pokemon', true);
-
-    // Perk 4 (Lucky Find): Partner 4+ kalpliyse her yakalamada ekstra +10 XP
-    if ((activePartner?.friendshipHearts ?? 1) >= 4) {
-      _xp += 10;
-      activePartner?.addXp(10);
-      await prefs.setInt('trainer_xp', _xp);
-    }
 
     if (!_caughtPokemonMap.containsKey(pokeId)) {
       _caughtPokemonMap[pokeId] = CaughtPokemon(
@@ -421,7 +397,6 @@ class TrainerProvider extends ChangeNotifier {
     }
 
     if (_steps >= 1000) unlock('first_steps', 50);
-    // DÜZELTME: Başlangıç partneri first_catch açmaz, gerçek yakalama şarttır
     if (_hasCaughtWildPokemon) unlock('first_catch', 50);
     if (_streak >= 7) unlock('getting_serious', 100);
     if (_bestDailySteps >= 10000) unlock('long_walker', 100);
@@ -437,42 +412,47 @@ class TrainerProvider extends ChangeNotifier {
     }
   }
 
-  /// DÜZELTME: Evrimleştiğinde eski Pokémon koleksiyondan SİLİNMEZ!
-  /// Eski tür Pokédex'te korunur, yeni evrim türü koleksiyona eklenir ve aktif partner yapılır.
+  /// DÜZELTME (Madde 7.1): Evrim hedefi zaten koleksiyondaysa geçmişi ve yüksek değerleri korunur
   bool triggerManualEvolution() {
     final partner = activePartner;
     if (partner == null) return false;
 
-    final currentLevel = partner.level;
+    final int currentLevel = partner.level;
     final evolutionRules = EvolutionData.evolutions[_partnerId];
 
     if (evolutionRules != null) {
       for (var requiredLevel in evolutionRules.keys) {
         if (currentLevel >= requiredLevel) {
-          int nextEvolutionId = evolutionRules[requiredLevel]!;
+          final int nextEvolutionId = evolutionRules[requiredLevel]!;
 
           if (_partnerId != nextEvolutionId) {
             final existingEvolved = _caughtPokemonMap[nextEvolutionId];
 
-            // Eski Pokémon (_caughtPokemonMap[_partnerId]) silinmez, Pokédex'te kalır!
             _caughtPokemonMap[nextEvolutionId] = CaughtPokemon(
               id: nextEvolutionId,
               level: existingEvolved != null && existingEvolved.level > partner.level
                   ? existingEvolved.level
                   : partner.level,
-              xp: partner.xp,
-              friendshipPoints: partner.friendshipPoints,
-              stepsWalked: partner.stepsWalked,
+              xp: existingEvolved != null && existingEvolved.xp > partner.xp
+                  ? existingEvolved.xp
+                  : partner.xp,
+              friendshipPoints: existingEvolved != null &&
+                      existingEvolved.friendshipPoints > partner.friendshipPoints
+                  ? existingEvolved.friendshipPoints
+                  : partner.friendshipPoints,
+              stepsWalked: (existingEvolved?.stepsWalked ?? 0) + partner.stepsWalked,
               caughtAt: existingEvolved?.caughtAt ?? DateTime.now(),
-              caughtLocation: partner.caughtLocation ?? 'Evolved Partner',
+              caughtLocation: existingEvolved?.caughtLocation ??
+                  partner.caughtLocation ??
+                  'Evolved Partner',
             );
 
             _partnerId = nextEvolutionId;
 
-            SharedPreferences.getInstance().then((prefs) {
-              prefs.setInt('partner_id', _partnerId);
-              _saveDetailedPokemons(prefs);
-              checkAchievements();
+            SharedPreferences.getInstance().then((prefs) async {
+              await prefs.setInt('partner_id', _partnerId);
+              await _saveDetailedPokemons(prefs);
+              await checkAchievements();
             });
 
             notifyListeners();
@@ -484,7 +464,6 @@ class TrainerProvider extends ChangeNotifier {
     return false;
   }
 
-  /// Atomik Normal Arama Hakkı Tüketimi: Hak yoksa false döner, eksiye düşmez
   bool tryConsumeNormalSearch() {
     if (availableNormalSearches <= 0) return false;
     _usedNormalSearches++;
@@ -495,7 +474,6 @@ class TrainerProvider extends ChangeNotifier {
     return true;
   }
 
-  /// Atomik Nadir Arama Hakkı Tüketimi: Hak yoksa false döner, eksiye düşmez
   bool tryConsumeRareSearch() {
     if (availableRareSearches <= 0) return false;
     _usedRareSearches++;
@@ -506,7 +484,6 @@ class TrainerProvider extends ChangeNotifier {
     return true;
   }
 
-  // Geriye dönük uyumluluk için korunur (içeride güvenli atomik metodu çağırır)
   void consumeNormalSearch() => tryConsumeNormalSearch();
   void consumeRareSearch() => tryConsumeRareSearch();
 }

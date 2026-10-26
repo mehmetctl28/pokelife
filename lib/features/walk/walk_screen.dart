@@ -133,11 +133,10 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
     if (mounted) setState(() => _status = event.status);
   }
 
-  void _triggerEncounter(bool isRare, Region currentRegion) {
+void _triggerEncounter(bool isRare, Region currentRegion) {
     if (isSearching) return;
     final trainer = context.read<TrainerProvider>();
 
-    // ATOMİK HAK TÜKETİMİ: Hak yoksa işlem hiç başlamaz
     final bool consumed = isRare
         ? trainer.tryConsumeRareSearch()
         : trainer.tryConsumeNormalSearch();
@@ -157,18 +156,18 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
 
     setState(() => isSearching = true);
 
-    Future.delayed(const Duration(milliseconds: 900), () {
+    Future.delayed(const Duration(milliseconds: 900), () async {
       if (!mounted) return;
       setState(() => isSearching = false);
 
-      // Perk 2 (Scout Bond): 2+ kalp varsa normal aramada bile %15 nadir Pokémon şansı!
       final bool effectiveRare =
           isRare || (trainer.hasScoutBondSynergy && _rng.nextDouble() < 0.15);
 
       final int pokeId = currentRegion.getRandomPokemonId(isRare: effectiveRare);
       final int wildLevel = currentRegion.getWildLevel(isRare: effectiveRare);
 
-      Navigator.of(context).push(
+      // DÜZELTME (Madde 2.B): Savaş ekranından dönen sonuç mesajı parent ekranda gösterilir
+      final String? battleBanner = await Navigator.of(context).push<String>(
         MaterialPageRoute(
           builder: (_) => BattleScreen(
             wildPokemonId: pokeId,
@@ -178,11 +177,27 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
           ),
         ),
       );
+
+      if (!mounted || battleBanner == null || battleBanner.isEmpty) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            battleBanner,
+            style: const TextStyle(
+              fontSize: 9,
+              color: AppColors.navy,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          backgroundColor: AppColors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     });
   }
 
   Future<void> _challengeGymLeader(Region currentRegion, GymLeader leader) async {
-    await Navigator.of(context).push(
+    final String? gymBanner = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (_) => BattleScreen(
           wildPokemonId: leader.team.first.id,
@@ -194,6 +209,22 @@ class _WalkScreenState extends State<WalkScreen> with WidgetsBindingObserver {
       ),
     );
     await _refreshBadges();
+    if (!mounted || gymBanner == null || gymBanner.isEmpty) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          gymBanner,
+          style: const TextStyle(
+            fontSize: 9,
+            color: AppColors.navy,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: AppColors.yellow,
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   void _showRegionSelector(BuildContext context, TrainerProvider trainer) {

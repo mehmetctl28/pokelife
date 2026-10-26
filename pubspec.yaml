@@ -1,5 +1,5 @@
 name: pokelife
-description: "A new Flutter project."
+description: "PokéLife — A retro DSi-styled Kanto fitness-RPG powered by real-world steps."
 publish_to: 'none'
 
 version: 1.0.0+1

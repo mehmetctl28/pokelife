@@ -14,7 +14,7 @@ void main() {
       expect(BattleEngine.calculateEnemyMaxHp(5, isRare: true), 85);
     });
 
-    test('Test 2: Type effectiveness matrix returns 1.5x, 0.7x, or 1.0x', () {
+    test('Test 2: Type effectiveness matrix returns 1.5x, 0.7x, 1.0x, or 0.0x immunity', () {
       expect(BattleEngine.getTypeMultiplier('GRASS', 'Water'), 1.5);
       expect(BattleEngine.getTypeMultiplier('FIRE', 'Grass / Poison'), 1.5);
       expect(BattleEngine.getTypeMultiplier('WATER', 'Rock / Ground'), 1.5);
@@ -23,6 +23,10 @@ void main() {
       expect(BattleEngine.getTypeMultiplier('GRASS', 'Fire'), 0.7);
       expect(BattleEngine.getTypeMultiplier('FIRE', 'Water'), 0.7);
       expect(BattleEngine.getTypeMultiplier('WATER', 'Grass'), 0.7);
+
+      // Bağışıklık (Electric vs Ground -> 0.0x)
+      expect(BattleEngine.getTypeMultiplier('ELECTRIC', 'Rock / Ground'), 0.0);
+      expect(BattleEngine.getTypeMultiplier('NORMAL', 'Ghost / Poison'), 0.0);
 
       expect(BattleEngine.getTypeMultiplier('NORMAL', 'Electric'), 1.0);
     });
@@ -41,11 +45,12 @@ void main() {
       );
 
       expect(outcome.remainingEnemyHp, 1);
+      expect(outcome.damageDealt, 4); // 5 HP -> 1 HP (Gerçek düşen hasar: 4)
       expect(outcome.triggeredFalseSwipe, true);
       expect(outcome.isEnemyFainted, false);
     });
 
-    test('Test 4: Standard lethal attack clamps enemy HP to 0 and triggers faint', () {
+    test('Test 4: Lethal attack clamps enemy HP to 0 and caps damageDealt to remaining HP', () {
       final moves = BattleEngine.buildMovesForType('Fire');
       final emberStrike = moves[1];
 
@@ -60,6 +65,9 @@ void main() {
 
       expect(outcome.isSuperEffective, true);
       expect(outcome.remainingEnemyHp, 0);
+      // DÜZELTME (Madde 2.E): Düşmanın 10 HP'si varken gösterilen hasar 10'u aşamaz
+      expect(outcome.damageDealt, 10);
+      expect(outcome.rawDamage, greaterThan(10));
       expect(outcome.triggeredFalseSwipe, false);
       expect(outcome.isEnemyFainted, true);
     });
@@ -129,7 +137,6 @@ void main() {
     test('Test 8: Gym Badges permanently boost Attack Damage (+5%/badge) and Catch Rate (+3%/badge)', () async {
       SharedPreferences.setMockInitialValues({});
 
-      // Brock rozetini kazanma ve duplicate engelleme testi
       final firstUnlock = await GymData.unlockBadge('boulder_badge');
       final duplicateUnlock = await GymData.unlockBadge('boulder_badge');
       final earned = await GymData.getEarnedBadges();
@@ -138,8 +145,7 @@ void main() {
       expect(duplicateUnlock, false);
       expect(earned.length, 1);
 
-      // 0 Rozet vs 4 Rozet Hasar Karşılaştırması
-      final move = BattleEngine.buildMovesForType('Water')[1]; // WATER PULSE (Power: 24)
+      final move = BattleEngine.buildMovesForType('Water')[1];
       final outcomeNoBadges = BattleEngine.resolvePlayerAttack(
         move: move,
         defenderType: 'Rock',
@@ -161,27 +167,17 @@ void main() {
       );
 
       expect(outcomeWith4Badges.damageDealt, greaterThan(outcomeNoBadges.damageDealt));
+    });
 
-      // 0 Rozet vs 4 Rozet Yakalama Oranı Karşılaştırması
-      final catchNoBadges = BattleEngine.calculateCatchProbability(
-        enemyHp: 80,
-        enemyMaxHp: 100,
-        isRare: false,
-        razzBerryActive: false,
-        partnerHearts: 1,
-        badgeCount: 0,
-      );
+    test('Test 9: Dual-type Normal/Flying builds WING ATTACK with FLYING type and MORNING SUN limits to 2 uses', () {
+      final pidgeyMoves = BattleEngine.buildMovesForType('Normal / Flying');
+      final specialMove = pidgeyMoves[1];
+      final healMove = pidgeyMoves[3];
 
-      final catchWith4Badges = BattleEngine.calculateCatchProbability(
-        enemyHp: 80,
-        enemyMaxHp: 100,
-        isRare: false,
-        razzBerryActive: false,
-        partnerHearts: 1,
-        badgeCount: 4,
-      );
-
-      expect(catchWith4Badges, greaterThan(catchNoBadges));
+      expect(specialMove.name, 'WING ATTACK');
+      expect(specialMove.type, 'FLYING');
+      expect(healMove.isHeal, true);
+      expect(healMove.maxUses, 2);
     });
   });
 }

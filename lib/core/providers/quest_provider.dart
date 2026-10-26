@@ -100,7 +100,7 @@ class QuestProvider extends ChangeNotifier {
     await prefs.setStringList(_questsPrefsKey, encoded);
   }
 
-  void updateStepProgress(int dailySteps) async {
+  Future<void> updateStepProgress(int dailySteps) async {
     bool changed = false;
     for (var q in _quests) {
       if (q.id.startsWith('daily_walk_')) {
@@ -118,7 +118,7 @@ class QuestProvider extends ChangeNotifier {
     }
   }
 
-  void addCatchProgress() async {
+  Future<void> addCatchProgress() async {
     bool changed = false;
     for (var q in _quests) {
       if (q.id == 'daily_catch_1' && q.current < q.target) {
